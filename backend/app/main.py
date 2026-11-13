@@ -166,18 +166,43 @@ async def reingest() -> dict:
     return await run_in_threadpool(ingest)
 
 
+MAX_SYNC_DAYS = 730
+
+
+def sync_range(days: int | None, from_date: date | None, to_date: date | None) -> tuple[date, date]:
+    """The inclusive day range to fetch: ``from_date``..``to_date`` (``to_date``
+    defaults to today), or the last ``days`` days. Raises 422 on a bad range."""
+    today = date.today()
+    end = to_date or today
+    if from_date is None:
+        start = end - timedelta(days=days or 30)
+    else:
+        start = from_date
+    if end > today:
+        raise HTTPException(422, "La date de fin ne peut pas être dans le futur.")
+    if start > end:
+        raise HTTPException(422, "La date de début doit précéder la date de fin.")
+    if (end - start).days > MAX_SYNC_DAYS:
+        raise HTTPException(422, f"Plage trop longue : {MAX_SYNC_DAYS} jours au maximum.")
+    return start, end
+
+
 @app.post("/api/sync")
-async def sync(days: int = Query(30, ge=1, le=730)) -> dict:
-    """Fetch the last ``days`` days from the Xiaomi cloud (needs a mifit session), then ingest."""
-    end = date.today()
-    start = end - timedelta(days=days)
+async def sync(
+    days: int | None = Query(None, ge=1, le=MAX_SYNC_DAYS),
+    from_date: date | None = Query(None, alias="from"),
+    to_date: date | None = Query(None, alias="to"),
+) -> dict:
+    """Fetch a day range from the Xiaomi cloud (needs a mifit session), then add the
+    runs not stored yet. ``?from=YYYY-MM-DD&to=YYYY-MM-DD``, or ``?days=N`` (default 30)."""
+    start, end = sync_range(days, from_date, to_date)
     out = DATA_DIR / f"workout_detail_{start}_{end}.json"
     cmd = [
         sys.executable, "-I", str(BACKEND_DIR / "mifit_patch.py"),
         "export", "workout_detail", "--from", str(start), "--to", str(end),
         "--long", "--json", str(out),
     ]
-    proc = await run_in_threadpool(subprocess.run, cmd, capture_output=True, text=True, timeout=900)
+    proc = await run_in_threadpool(subprocess.run, cmd, capture_output=True, text=True, timeout=1800)
     if proc.returncode != 0:
         raise HTTPException(502, f"mifit failed: {proc.stderr.strip()[-500:]}")
-    return {"file": out.name, **(await run_in_threadpool(ingest))}
+    return {"file": out.name, "from": str(start), "to": str(end), **(await run_in_threadpool(ingest))}

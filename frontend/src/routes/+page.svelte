@@ -2,6 +2,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import { fmtDay, fmtDuration, fmtKm, fmtPace, fmtShortDay, fmtTime } from '#lib/api.js';
 	import RouteGlyph from '#lib/components/RouteGlyph.svelte';
+	import SyncPanel from '#lib/components/SyncPanel.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -36,23 +37,7 @@
 			.format(new Date(iso + 'T00:00:00Z'))
 			.replace('.', '');
 
-	let syncing = $state(false);
-	let syncMsg = $state('');
-
-	async function sync() {
-		syncing = true;
-		syncMsg = '';
-		try {
-			const res = await fetch('/api/sync?days=30', { method: 'POST' });
-			const body = await res.json();
-			syncMsg = res.ok
-				? 'Sorties des 30 derniers jours synchronisées.'
-				: `Synchronisation impossible : ${body.detail}. Reconnecte-toi avec mifit login.`;
-			await invalidateAll();
-		} finally {
-			syncing = false;
-		}
-	}
+	let syncOpen = $state(false);
 </script>
 
 <svelte:head><title>Mes courses</title></svelte:head>
@@ -65,17 +50,21 @@
 				{data.runs.length} sorties et {fmtKm(totalM, 1)} km depuis le {since}
 			</p>
 		</div>
-		<div class="flex flex-col items-end gap-2">
-			<button
-				class="rounded-full border border-rule bg-surface px-4 py-2 text-sm font-medium transition-colors hover:border-ink disabled:cursor-wait disabled:opacity-60"
-				onclick={sync}
-				disabled={syncing}
-			>
-				{syncing ? 'Synchronisation…' : 'Synchroniser'}
-			</button>
-			{#if syncMsg}<p class="max-w-64 text-right text-xs text-muted" role="status">{syncMsg}</p>{/if}
-		</div>
+		<button
+			class="rounded-full border border-rule bg-surface px-4 py-2 text-sm font-medium transition-colors hover:border-ink"
+			aria-expanded={syncOpen}
+			aria-controls="sync-panel"
+			onclick={() => (syncOpen = !syncOpen)}
+		>
+			{syncOpen ? 'Fermer' : 'Synchroniser'}
+		</button>
 	</header>
+
+	{#if syncOpen}
+		<div id="sync-panel" class="mt-6">
+			<SyncPanel lastRun={latest?.start_local} onsynced={invalidateAll} />
+		</div>
+	{/if}
 
 	{#if latest}
 		<a
