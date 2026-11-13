@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import polars as pl
@@ -29,7 +30,11 @@ def _load(path: Path) -> list[dict]:
     return json.loads(path.read_text())["records"]
 
 
-def ingest(data_dir: Path = DATA_DIR) -> dict:
+def ingest(
+    data_dir: Path = DATA_DIR,
+    on_imported: Callable[[int], None] | None = None,
+    on_analysed: Callable[[int, int], None] | None = None,
+) -> dict:
     """Add the runs found in ``data_dir``'s ``workout_detail*.json`` files that are
     not in the database yet. Append-only: runs already stored are never deleted or
     overwritten, so syncing the same period again changes nothing."""
@@ -105,7 +110,10 @@ def ingest(data_dir: Path = DATA_DIR) -> dict:
         cur.execute("INSERT INTO track SELECT * FROM track_df")
         cur.execute("COMMIT")
 
-    kinds = analyse_runs([r["id"] for r in runs if r["sport"] == "running"])
+    running = [r["id"] for r in runs if r["sport"] == "running"]
+    if on_imported:
+        on_imported(len(runs))
+    kinds = analyse_runs(running, on_analysed)
     return {
         "new_runs": len(runs),
         "already_stored": len(known),

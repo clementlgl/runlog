@@ -1,6 +1,6 @@
 <script lang="ts">
 	// Choose the day range to fetch from the Xiaomi cloud, then run the sync.
-	import { untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 
 	type Props = { lastRun?: string; onsynced?: () => Promise<void> | void };
 	let { lastRun, onsynced }: Props = $props();
@@ -50,6 +50,59 @@
 		to = today;
 	}
 
+	type Step = { status: 'pending' | 'running' | 'done' | 'error'; done: number | null; total: number | null; detail: string | null };
+	type Job = {
+		id: string;
+		start: string;
+		end: string;
+		status: 'running' | 'done' | 'error';
+		phase: string;
+		steps: { fetch: Step; import: Step; analyse: Step };
+		result: { new_runs?: number } | null;
+		error: string | null;
+	};
+	let job = $state<Job | null>(null);
+	let timer: ReturnType<typeof setTimeout> | undefined;
+
+	const STEPS = [
+		{ key: 'fetch', label: 'Récupération depuis Xiaomi' },
+		{ key: 'import', label: 'Ajout des nouvelles sorties' },
+		{ key: 'analyse', label: 'Analyse des séances' }
+	] as const;
+
+	const errorText = (e: string | null) =>
+		!e
+			? 'erreur inconnue'
+			: e.startsWith('mifit failed')
+				? 'la session Xiaomi a expiré ou est invalide. Reconnecte-toi avec mifit login.'
+				: e;
+
+	// Poll the job until it ends; refresh the page data once it's done.
+	async function poll() {
+		try {
+			const res = await fetch('/api/sync/current');
+			job = await res.json();
+		} catch {
+			// transient: try again on the next tick
+		}
+		if (job?.status === 'running') {
+			timer = setTimeout(poll, 1000);
+			return;
+		}
+		syncing = false;
+		if (job?.status === 'done') {
+			const n = job.result?.new_runs ?? 0;
+			message =
+				n === 0
+					? `Aucune nouvelle sortie entre le ${fmt(job.start)} et le ${fmt(job.end)}.`
+					: `${n} nouvelle${n > 1 ? 's' : ''} sortie${n > 1 ? 's' : ''} ajoutée${n > 1 ? 's' : ''}.`;
+			await onsynced?.();
+		} else if (job?.status === 'error') {
+			failed = true;
+			message = `Synchronisation impossible : ${errorText(job.error)}`;
+		}
+	}
+
 	async function run() {
 		if (error) return;
 		syncing = true;
@@ -58,27 +111,49 @@
 		try {
 			const res = await fetch(`/api/sync?from=${from}&to=${to}`, { method: 'POST' });
 			const body = await res.json();
-			if (res.ok) {
-				const n = body.new_runs ?? 0;
-				message =
-					n === 0
-						? `Aucune nouvelle sortie entre le ${fmt(from)} et le ${fmt(to)}.`
-						: `${n} nouvelle${n > 1 ? 's' : ''} sortie${n > 1 ? 's' : ''} ajoutée${n > 1 ? 's' : ''}.`;
-				await onsynced?.();
+			if (res.status === 202 || res.status === 409) {
+				job = body; // 409: a sync is already running, follow that one
+				poll();
 			} else {
+				syncing = false;
 				failed = true;
-				const detail = typeof body.detail === 'string' ? body.detail : 'erreur inconnue';
-				message = detail.startsWith('mifit failed')
-					? 'Synchronisation impossible : la session Xiaomi a expiré ou est invalide. Reconnecte-toi avec mifit login.'
-					: `Synchronisation impossible : ${detail}`;
+				message = `Synchronisation impossible : ${typeof body.detail === 'string' ? body.detail : 'erreur inconnue'}`;
 			}
 		} catch {
+			syncing = false;
 			failed = true;
 			message = 'Synchronisation impossible : le serveur ne répond pas.';
-		} finally {
-			syncing = false;
 		}
 	}
+
+	// Reopening the panel (or reloading the page) during a sync shows its progress.
+	onMount(() => {
+		(async () => {
+			try {
+				const current: Job | null = await (await fetch('/api/sync/current')).json();
+				if (current?.status === 'running') {
+					job = current;
+					syncing = true;
+					poll();
+				}
+			} catch {
+				// no job info: the form stays usable
+			}
+		})();
+		return () => clearTimeout(timer);
+	});
+
+	const stepText = (s: Step, key: string) => {
+		if (s.status === 'pending') return 'En attente';
+		if (s.status === 'error') return 'Échec';
+		if (key === 'fetch') {
+			const chunks = s.total ? `bloc ${s.done ?? 0} sur ${s.total}` : s.status === 'running' ? 'en cours' : '';
+			return [chunks, s.detail].filter(Boolean).join(', ') || 'Terminé';
+		}
+		if (key === 'analyse' && s.total) return `${s.done ?? 0} sur ${s.total}`;
+		if (s.detail) return s.detail;
+		return s.status === 'running' ? 'En cours' : 'Terminé';
+	};
 </script>
 
 <section class="rounded-2xl bg-surface p-5 sm:p-6" aria-labelledby="sync-title">
@@ -144,7 +219,38 @@
 		</button>
 	</form>
 
+	{#if job && (syncing || job.status !== 'running')}
+		<ol class="mt-5 space-y-3" aria-label="Progression de la synchronisation">
+			{#each STEPS as st (st.key)}
+				{@const s = job.steps[st.key]}
+				<li>
+					<div class="flex items-baseline justify-between gap-4 text-sm">
+						<span class="flex items-center gap-2 {s.status === 'pending' ? 'text-faint' : ''}">
+							<span
+								class="inline-block size-2.5 rounded-full {s.status === 'done'
+									? 'bg-route'
+									: s.status === 'running'
+										? 'animate-pulse bg-route motion-reduce:animate-none'
+										: s.status === 'error'
+											? 'bg-[#b42318] dark:bg-[#f97066]'
+											: 'border border-rule'}"
+								aria-hidden="true"
+							></span>
+							{st.label}
+						</span>
+						<span class="text-muted">{stepText(s, st.key)}</span>
+					</div>
+					{#if s.status === 'running' && s.total}
+						<div class="mt-1.5 h-1.5 rounded-full bg-rule/60" role="progressbar" aria-valuemin="0" aria-valuemax={s.total} aria-valuenow={s.done ?? 0} aria-label={st.label}>
+							<div class="h-1.5 rounded-full bg-route transition-[width] duration-500" style="width:{((s.done ?? 0) / s.total) * 100}%"></div>
+						</div>
+					{/if}
+				</li>
+			{/each}
+		</ol>
+	{/if}
+
 	<p class="mt-3 min-h-5 text-sm {error || failed ? 'text-[#b42318] dark:text-[#f97066]' : 'text-muted'}" role="status" aria-live="polite">
-		{#if error}{error}{:else if syncing}Récupération du {fmt(from)} au {fmt(to)} ({span + 1} jours)…{:else}{message}{/if}
+		{#if error}{error}{:else if syncing && job}Récupération du {fmt(job.start)} au {fmt(job.end)}…{:else}{message}{/if}
 	</p>
 </section>

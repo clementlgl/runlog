@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 
 from .db import cursor
 from .intervals import analyse
@@ -10,14 +11,17 @@ from .intervals import analyse
 ANALYSIS_VERSION = 3  # bump to force recomputation after an algorithm change
 
 
-def analyse_runs(run_ids: list[int] | None = None) -> dict:
-    """(Re)analyse ``run_ids`` (all running sessions when ``None``)."""
+def analyse_runs(
+    run_ids: list[int] | None = None, on_progress: Callable[[int, int], None] | None = None
+) -> dict:
+    """(Re)analyse ``run_ids`` (all running sessions when ``None``).
+    ``on_progress(done, total)`` is called after each run."""
     with cursor() as cur:
         if run_ids is None:
             run_ids = [r[0] for r in cur.execute("SELECT id FROM runs WHERE sport = 'running'").fetchall()]
         counts = {"intervals": 0, "continuous": 0}
         rows = []
-        for run_id in run_ids:
+        for n, run_id in enumerate(run_ids, 1):
             res = cur.execute(
                 """SELECT t_s, distance_m, heart_rate_bpm, cadence_spm
                    FROM samples WHERE run_id = ? ORDER BY t_s""",
@@ -30,6 +34,8 @@ def analyse_runs(run_ids: list[int] | None = None) -> dict:
             counts[kind] += 1
             payload = {"version": ANALYSIS_VERSION, **a.as_dict()}
             rows.append((run_id, kind, a.label, json.dumps(payload)))
+            if on_progress:
+                on_progress(n, len(run_ids))
         cur.execute("BEGIN")
         cur.executemany("INSERT OR REPLACE INTO run_analysis VALUES (?, ?, ?, ?)", rows)
         cur.execute("COMMIT")

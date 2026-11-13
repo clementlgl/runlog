@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.concurrency import run_in_threadpool
 
-from .config import BACKEND_DIR, DATA_DIR
 from .db import cursor
 from .analysis import analyse_runs, ensure_analysed
 from .ingest import ingest
+from .sync_job import SyncManager
 
 
 def _rows(sql: str, params: list | None = None) -> list[dict]:
@@ -35,6 +33,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Mi Fitness runs", lifespan=lifespan)
+sync_manager = SyncManager()
 
 
 @app.get("/api/health")
@@ -187,22 +186,24 @@ def sync_range(days: int | None, from_date: date | None, to_date: date | None) -
     return start, end
 
 
-@app.post("/api/sync")
-async def sync(
+@app.post("/api/sync", status_code=202)
+def sync(
+    response: Response,
     days: int | None = Query(None, ge=1, le=MAX_SYNC_DAYS),
     from_date: date | None = Query(None, alias="from"),
     to_date: date | None = Query(None, alias="to"),
 ) -> dict:
-    """Fetch a day range from the Xiaomi cloud (needs a mifit session), then add the
-    runs not stored yet. ``?from=YYYY-MM-DD&to=YYYY-MM-DD``, or ``?days=N`` (default 30)."""
+    """Start a background sync of a day range (``?from=&to=``, or ``?days=N``, default
+    30): fetch from the Xiaomi cloud, add the runs not stored yet, analyse them.
+    Returns the job state; poll ``GET /api/sync/current``. 409 if one is running."""
     start, end = sync_range(days, from_date, to_date)
-    out = DATA_DIR / f"workout_detail_{start}_{end}.json"
-    cmd = [
-        sys.executable, "-I", str(BACKEND_DIR / "mifit_patch.py"),
-        "export", "workout_detail", "--from", str(start), "--to", str(end),
-        "--long", "--json", str(out),
-    ]
-    proc = await run_in_threadpool(subprocess.run, cmd, capture_output=True, text=True, timeout=1800)
-    if proc.returncode != 0:
-        raise HTTPException(502, f"mifit failed: {proc.stderr.strip()[-500:]}")
-    return {"file": out.name, "from": str(start), "to": str(end), **(await run_in_threadpool(ingest))}
+    state, started = sync_manager.start(start, end)
+    if not started:
+        response.status_code = 409
+    return state
+
+
+@app.get("/api/sync/current")
+def sync_current() -> dict | None:
+    """State of the running sync, or of the last one (``null`` if none since startup)."""
+    return sync_manager.current()
