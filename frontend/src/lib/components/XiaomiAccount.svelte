@@ -7,13 +7,13 @@
 	type Login = {
 		status: 'waiting' | 'done' | 'error';
 		login_url: string | null;
+		link_count: number;
 		notification_url: string | null;
 		error: string | null;
 	};
 
 	let info = $state<Info | null>(null);
 	let login = $state<Login | null>(null);
-	let blocked = $state(false); // popup blocked: show the link instead
 	let timer: ReturnType<typeof setTimeout> | undefined;
 
 	const dateFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -41,7 +41,6 @@
 	}
 
 	async function connect() {
-		blocked = false;
 		// Open the tab now, inside the click: opened after the request it would be
 		// treated as a popup and blocked.
 		const tab = window.open('', '_blank');
@@ -50,15 +49,14 @@
 			login = await res.json();
 		} catch {
 			tab?.close();
-			login = { status: 'error', login_url: null, notification_url: null, error: 'le serveur ne répond pas.' };
+			login = { status: 'error', login_url: null, link_count: 0, notification_url: null, error: 'le serveur ne répond pas.' };
 			return;
 		}
 		if (login?.login_url && tab) {
 			tab.opener = null;
 			tab.location.href = login.login_url;
 		} else {
-			tab?.close();
-			blocked = !!login?.login_url;
+			tab?.close(); // popup blocked: the link shown below still works
 		}
 		poll();
 	}
@@ -70,7 +68,6 @@
 				const current: Login | null = await (await fetch('/api/login')).json();
 				if (current?.status === 'waiting') {
 					login = current;
-					blocked = true; // the tab may be gone: offer the link again
 					poll();
 				}
 			} catch {
@@ -106,14 +103,25 @@
 	</button>
 
 	{#if login?.status === 'waiting'}
-		<p class="w-full text-sm text-muted">
-			Dans l'onglet Xiaomi : connecte-toi à ton compte si besoin, puis valide la connexion. Le lien expire au bout de 2 minutes.
-			{#if blocked && login.login_url}
-				<a class="ml-1 font-medium text-ink underline" href={login.login_url} target="_blank" rel="noopener noreferrer">
-					Ouvrir la page de connexion Xiaomi
-				</a>
+		<div class="w-full space-y-1.5 text-sm text-muted">
+			<p>
+				Dans l'onglet Xiaomi, valide la connexion. Si la page te demande de te connecter, fais-le : le lien se
+				renouvelle tout seul s'il expire, pendant 10 minutes.
+			</p>
+			<p>
+				Plus rapide : sois déjà connecté sur
+				<a class="font-medium text-ink underline" href="https://account.xiaomi.com" target="_blank" rel="noopener noreferrer">account.xiaomi.com</a>
+				dans ce navigateur, la validation ne prend alors qu'un clic.
+			</p>
+			{#if login.login_url}
+				<p>
+					{#if login.link_count > 1}<span class="text-ink">Le lien précédent a expiré.</span>{/if}
+					<a class="font-medium text-ink underline" href={login.login_url} target="_blank" rel="noopener noreferrer">
+						{login.link_count > 1 ? 'Ouvrir le nouveau lien de connexion' : 'Ouvrir la page de connexion Xiaomi'}
+					</a>
+				</p>
 			{/if}
-		</p>
+		</div>
 	{:else if login?.status === 'done'}
 		<p class="w-full text-sm text-muted" role="status">Connexion réussie.</p>
 	{:else if login?.status === 'error'}

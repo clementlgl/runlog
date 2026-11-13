@@ -16,16 +16,23 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 
+import requests
 from mifit.auth.lifetime import record_event
-from mifit.auth.qr import login_qr
+from mifit.auth.qr import SID, exchange_sts, new_device_id, poll_qr_login, request_qr_login
 from mifit.auth.session import Session, load_session, save_session
 from mifit.errors import NotificationRequiredError
+
+# A Xiaomi login link lives about as long as one long poll (~2 min): too short
+# when the user first has to sign in to their Xiaomi account on that page. The
+# login keeps asking for a fresh link until this window closes.
+LOGIN_WINDOW_S = 10 * 60
 
 
 @dataclass
 class LoginState:
     status: str  # waiting | done | error
     login_url: str | None = None
+    link_count: int = 0  # 1 = first link; more = renewed after expiry
     notification_url: str | None = None  # security confirmation asked by Xiaomi
     error: str | None = None
     started_at: float = 0.0
@@ -53,10 +60,35 @@ def session_info() -> dict:
     }
 
 
+def login_with_renewal(on_qr: Callable[[str, str], None], window_s: float = LOGIN_WINDOW_S) -> Session:
+    """mifit's QR login, with a fresh link each time one expires unapproved.
+
+    Same steps as ``mifit.auth.qr.login_qr`` (one HTTP session, one device id),
+    looped until approval or ``window_s``. A security confirmation request is
+    raised at once: it needs the user, not a new link.
+    """
+    http = requests.Session()
+    device_id = new_device_id()
+    deadline = time.time() + window_s
+    last: Exception | None = None
+    while time.time() < deadline:
+        challenge = request_qr_login(http, SID, device_id=device_id)
+        on_qr(challenge.login_url, challenge.qr_payload)
+        try:
+            result = poll_qr_login(challenge, http, device_id=device_id)
+        except NotificationRequiredError:
+            raise
+        except Exception as exc:  # link expired (long-poll timeout / refusal): renew
+            last = exc
+            continue
+        return exchange_sts(result, SID, http, device_id=device_id)
+    raise TimeoutError(f"no approval within {int(window_s // 60)} minutes") from last
+
+
 class LoginManager:
     def __init__(
         self,
-        login: Callable[..., Session] = login_qr,
+        login: Callable[..., Session] = login_with_renewal,
         save: Callable[[Session], object] = save_session,
     ) -> None:
         self._login = login
@@ -89,7 +121,10 @@ class LoginManager:
 
     def _run(self) -> None:
         def on_qr(login_url: str, _qr_payload: str) -> None:
-            self._set(login_url=login_url)
+            with self._lock:
+                assert self.state_ is not None
+                self.state_.login_url = login_url
+                self.state_.link_count += 1
             self._url_ready.set()
 
         try:
@@ -109,7 +144,7 @@ class LoginManager:
         except Exception as exc:  # timeout of the long poll, network, refused login...
             text = str(exc) or type(exc).__name__
             if "timed out" in text.lower() or "timeout" in type(exc).__name__.lower():
-                text = "La connexion n'a pas été validée à temps (2 minutes). Relance-la."
+                text = "La connexion n'a pas été validée à temps (10 minutes). Relance-la."
             self._set(status="error", error=text, finished_at=time.time())
         finally:
             self._url_ready.set()
