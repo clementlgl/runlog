@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from contextlib import asynccontextmanager
@@ -12,6 +13,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from .config import BACKEND_DIR, DATA_DIR
 from .db import cursor
+from .analysis import analyse_runs, ensure_analysed
 from .ingest import ingest
 
 
@@ -28,6 +30,7 @@ async def lifespan(_: FastAPI):
         empty = cur.execute("SELECT count(*) FROM runs").fetchone()[0] == 0
     if empty:
         await run_in_threadpool(ingest)
+    await run_in_threadpool(ensure_analysed)
     yield
 
 
@@ -40,11 +43,11 @@ def health() -> dict:
 
 
 _RUN_SELECT = """
-    SELECT id, start_utc + to_seconds(coalesce(utc_offset_s, 0)) AS start_local,
+    SELECT id, a.workout_type, a.label AS workout_label, start_utc + to_seconds(coalesce(utc_offset_s, 0)) AS start_local,
            sport, duration_s, distance_m, avg_hr_bpm, max_hr_bpm, steps, total_kcal,
            CASE WHEN distance_m > 0 THEN round(duration_s / distance_m * 1000) END AS pace_s_per_km,
            CASE WHEN duration_s > 0 THEN round(steps * 60.0 / duration_s) END AS avg_cadence_spm
-    FROM runs
+    FROM runs LEFT JOIN run_analysis a ON a.run_id = runs.id
 """
 
 
@@ -99,6 +102,22 @@ def route_shapes(points: int = Query(80, ge=10, le=500)) -> dict[str, list[list[
         [points],
     )
     return {str(r["run_id"]): r["pts"] for r in rows}
+
+
+@app.get("/api/runs/{run_id}/analysis")
+def run_analysis(run_id: int) -> dict:
+    """Workout type and, for interval sessions, warm-up / reps / recoveries / cool-down."""
+    with cursor() as cur:
+        row = cur.execute("SELECT analysis FROM run_analysis WHERE run_id = ?", [run_id]).fetchone()
+    if row is None:
+        raise HTTPException(404, "no analysis for this run")
+    return json.loads(row[0])
+
+
+@app.post("/api/analyse")
+async def reanalyse() -> dict:
+    """Recompute every run's analysis (after tuning the detection)."""
+    return await run_in_threadpool(analyse_runs)
 
 
 @app.get("/api/runs/{run_id}/splits")

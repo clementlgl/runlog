@@ -5,8 +5,12 @@
 	import type { Map as MapType, Marker } from 'maplibre-gl';
 	import { onSchemeChange, prefersDark, readPalette } from '#lib/theme.js';
 
-	type Props = { track: [number, number][]; cursor?: [number, number] | null };
-	let { track, cursor = null }: Props = $props();
+	type Props = {
+		track: [number, number][];
+		cursor?: [number, number] | null;
+		highlights?: [number, number][][]; // e.g. interval reps; the rest of the track is muted
+	};
+	let { track, cursor = null, highlights = [] }: Props = $props();
 
 	let el: HTMLDivElement;
 	let map: MapType | undefined;
@@ -24,7 +28,22 @@
 		const layout = { 'line-join': 'round', 'line-cap': 'round' } as const;
 		// Surface-coloured casing keeps the route legible over busy tiles.
 		m.addLayer({ id: 'track-casing', type: 'line', source: 'track', layout, paint: { 'line-color': c.surface, 'line-width': 7 } });
-		m.addLayer({ id: 'track', type: 'line', source: 'track', layout, paint: { 'line-color': c.route, 'line-width': 3.5 } });
+		const hl = highlights.length > 0;
+		m.addLayer({
+			id: 'track',
+			type: 'line',
+			source: 'track',
+			layout,
+			paint: { 'line-color': hl ? c.faint : c.route, 'line-width': hl ? 2.5 : 3.5 }
+		});
+		if (hl) {
+			if (!m.getSource('highlights'))
+				m.addSource('highlights', {
+					type: 'geojson',
+					data: { type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates: highlights } }
+				});
+			m.addLayer({ id: 'highlights', type: 'line', source: 'highlights', layout, paint: { 'line-color': c.route, 'line-width': 4 } });
+		}
 	}
 
 	const pin = (label: string, title: string) => {

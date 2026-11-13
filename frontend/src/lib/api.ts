@@ -1,5 +1,7 @@
 export type Run = {
 	id: number;
+	workout_type: 'intervals' | 'continuous' | null;
+	workout_label: string | null;
 	start_local: string;
 	sport: string | null;
 	duration_s: number;
@@ -38,6 +40,40 @@ export type Split = {
 	distance_m: number;
 	avg_hr_bpm: number | null;
 	avg_cadence_spm: number | null;
+};
+
+export type IntervalSegment = {
+	kind: 'warmup' | 'work' | 'recovery' | 'cooldown';
+	index: number;
+	t0: number;
+	t1: number;
+	distance_m: number;
+	duration_s: number;
+	pace_s_per_km: number | null;
+	avg_hr_bpm: number | null;
+	max_hr_bpm: number | null;
+	min_hr_bpm: number | null;
+	end_hr_bpm: number | null;
+	avg_cadence_spm: number | null;
+};
+
+export type Analysis = {
+	is_interval: boolean;
+	label: string | null;
+	segments: IntervalSegment[];
+	summary: {
+		reps?: number;
+		work_distance_m?: number;
+		work_duration_s?: number;
+		rep_pace_mean_s_per_km?: number | null;
+		rep_pace_best_s_per_km?: number | null;
+		rep_pace_cv_pct?: number;
+		fade_pct?: number | null;
+		rep_hr_first_bpm?: number | null;
+		rep_hr_last_bpm?: number | null;
+		recovery_duration_mean_s?: number | null;
+		recovery_hr_drop_mean_bpm?: number | null;
+	};
 };
 
 const nf = (digits: number) =>

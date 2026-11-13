@@ -42,6 +42,13 @@ CREATE TABLE IF NOT EXISTS track (
     lat      DOUBLE NOT NULL,
     lon      DOUBLE NOT NULL
 );
+-- Derived per-run analysis (see analysis.py); recomputed from samples.
+CREATE TABLE IF NOT EXISTS run_analysis (
+    run_id        BIGINT PRIMARY KEY,
+    workout_type  VARCHAR NOT NULL,   -- 'intervals' | 'continuous'
+    label         VARCHAR,            -- e.g. '8 × 400 m'
+    analysis      JSON NOT NULL
+);
 """
 
 _lock = threading.Lock()

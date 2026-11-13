@@ -1,11 +1,19 @@
 // Canvas/WebGL libraries can't read CSS variables: resolve them, and re-resolve on scheme change.
 
-export type Palette = { route: string; ink: string; muted: string; faint: string; rule: string; surface: string };
+export type Palette = {
+	route: string;
+	routeSoft: string;
+	ink: string;
+	muted: string;
+	faint: string;
+	rule: string;
+	surface: string;
+};
 
 export function readPalette(): Palette {
 	const css = getComputedStyle(document.documentElement);
 	const v = (name: string) => css.getPropertyValue(`--${name}`).trim();
-	return { route: v('route'), ink: v('ink'), muted: v('muted'), faint: v('faint'), rule: v('rule'), surface: v('surface') };
+	return { route: v('route'), routeSoft: v('route-soft'), ink: v('ink'), muted: v('muted'), faint: v('faint'), rule: v('rule'), surface: v('surface') };
 }
 
 export const prefersDark = () => matchMedia('(prefers-color-scheme: dark)').matches;

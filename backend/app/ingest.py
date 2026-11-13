@@ -8,6 +8,7 @@ from pathlib import Path
 import polars as pl
 
 from .config import DATA_DIR
+from .analysis import analyse_runs
 from .db import cursor
 
 _SAMPLE_SCHEMA = {
@@ -100,7 +101,8 @@ def ingest(data_dir: Path = DATA_DIR) -> dict:
         cur.execute("INSERT INTO track SELECT * FROM track_df")
         cur.execute("COMMIT")
 
-    return {"runs": len(runs), "samples": len(samples), "track_points": len(track)}
+    kinds = analyse_runs([r["id"] for r in runs if r["sport"] == "running"])
+    return {"runs": len(runs), "samples": len(samples), "track_points": len(track), **kinds}
 
 
 if __name__ == "__main__":

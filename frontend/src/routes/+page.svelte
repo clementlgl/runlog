@@ -89,7 +89,9 @@
 				class="mx-auto h-auto w-40 text-route sm:w-full"
 			/>
 			<div>
-				<p class="text-muted">Dernière sortie</p>
+				<p class="text-muted">
+					Dernière sortie{#if latest.workout_type === 'intervals'}, fractionné {latest.workout_label}{/if}
+				</p>
 				<h2 class="mt-1 text-xl font-semibold group-hover:underline">
 					{fmtDay(latest.start_local)}, {fmtTime(latest.start_local)}
 				</h2>
@@ -156,6 +158,11 @@
 						<span>
 							<span class="font-medium">{fmtShortDay(r.start_local)}</span>
 							<span class="ml-2 text-sm text-faint">{fmtTime(r.start_local)}</span>
+							{#if r.workout_type === 'intervals'}
+								<span class="ml-2 rounded-full bg-route-soft px-2 py-0.5 text-xs font-medium whitespace-nowrap text-ink">
+									Fractionné {r.workout_label}
+								</span>
+							{/if}
 						</span>
 						<span class="text-right">
 							<span class="figure text-lg">{fmtKm(r.distance_m)}</span>

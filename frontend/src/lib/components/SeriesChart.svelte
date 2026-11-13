@@ -16,6 +16,7 @@
 		onhover?: (idx: number | null) => void;
 		height?: number;
 		incrs?: number[]; // allowed y tick steps (e.g. 30 s / 60 s for pace)
+		bands?: [number, number][]; // x ranges (km) to shade, e.g. interval reps
 	};
 
 	let {
@@ -28,7 +29,8 @@
 		syncKey = 'run',
 		onhover,
 		height = 150,
-		incrs
+		incrs,
+		bands = []
 	}: Props = $props();
 
 	let el: HTMLDivElement;
@@ -70,6 +72,22 @@
 					],
 					series: [{}, { label: title, stroke: c.route, width: 2, points: { show: false } }],
 					hooks: {
+						// Shade bands under the series (drawClear runs before axes and series).
+						drawClear: [
+							(u) => {
+								if (!bands.length) return;
+								const ctx = u.ctx;
+								ctx.save();
+								ctx.fillStyle = c.routeSoft;
+								const { top, height: h } = u.bbox;
+								for (const [a, b] of bands) {
+									const x0 = u.valToPos(a, 'x', true);
+									const x1 = u.valToPos(b, 'x', true);
+									ctx.fillRect(x0, top, Math.max(1, x1 - x0), h);
+								}
+								ctx.restore();
+							}
+						],
 						setCursor: [
 							(u) => {
 								const i = u.cursor.idx;

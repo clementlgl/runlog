@@ -97,10 +97,78 @@
 	});
 	const hover = (i: number | null) => (hoverIdx = i);
 
+	// --- interval session ---
+	const intervals = $derived(data.analysis?.is_interval ? data.analysis : null);
+	const indexByT = $derived(new Map(data.samples.map((p, i) => [p.t_s, i])));
+	const kmAt = (t: number) => series.x[indexByT.get(t) ?? Math.min(series.x.length - 1, t)] ?? 0;
+	const work = $derived(intervals ? intervals.segments.filter((s) => s.kind === 'work') : []);
+	const bands = $derived(work.map((s) => [kmAt(s.t0), kmAt(s.t1 - 1)] as [number, number]));
+	const highlights = $derived(
+		work.map((s) =>
+			data.track.filter((p) => p[2] >= s.t0 && p[2] < s.t1).map((p) => [p[0], p[1]] as [number, number])
+		)
+	);
+	const repRows = $derived.by(() => {
+		if (!intervals) return [];
+		const paces = work.map((s) => s.pace_s_per_km ?? 0).filter(Boolean);
+		const best = Math.min(...paces);
+		const worst = Math.max(...paces);
+		const recs = intervals.segments.filter((s) => s.kind === 'recovery');
+		return work.map((s, k) => {
+			const rec = recs[k];
+			return {
+				...s,
+				best: s.pace_s_per_km === best,
+				w: s.pace_s_per_km ? 35 + 65 * ((worst - s.pace_s_per_km) / Math.max(1, worst - best)) : 0,
+				rec,
+				hrDrop: rec && s.end_hr_bpm && rec.min_hr_bpm ? s.end_hr_bpm - rec.min_hr_bpm : null
+			};
+		});
+	});
+	// Under a minute, a warm-up/cool-down is a detection edge effect, not a phase.
+	const edge = (kind: 'warmup' | 'cooldown') =>
+		intervals?.segments.find((s) => s.kind === kind && s.duration_s >= 60);
+	const pct = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
+
+	// Plain-language reading of the session, from the summary numbers.
+	const insights = $derived.by(() => {
+		if (!intervals) return [];
+		const sm = intervals.summary;
+		const out: string[] = [];
+		const cv = sm.rep_pace_cv_pct ?? 0;
+		out.push(
+			cv < 4
+				? `Répétitions très régulières : l'allure varie de ${pct.format(cv)} % autour de ${fmtPace(sm.rep_pace_mean_s_per_km)}/km.`
+				: cv < 7
+					? `Répétitions assez régulières : l'allure varie de ${pct.format(cv)} % autour de ${fmtPace(sm.rep_pace_mean_s_per_km)}/km.`
+					: `Répétitions irrégulières : l'allure varie de ${pct.format(cv)} %. Vise une allure cible plus constante.`
+		);
+		const fade = sm.fade_pct;
+		if (fade != null)
+			out.push(
+				fade <= -3
+					? `Tu as accéléré au fil de la séance : les dernières répétitions sont ${pct.format(-fade)} % plus rapides que les premières.`
+					: fade >= 3
+						? `L'allure baisse en fin de séance : les dernières répétitions sont ${pct.format(fade)} % plus lentes que les premières.`
+						: `Allure tenue de la première à la dernière répétition.`
+			);
+		if (sm.rep_hr_first_bpm && sm.rep_hr_last_bpm) {
+			const drift = Math.round(sm.rep_hr_last_bpm - sm.rep_hr_first_bpm);
+			if (drift > 0) out.push(`La FC moyenne en répétition monte de ${drift} bpm entre la première et la dernière.`);
+		}
+		if (sm.recovery_hr_drop_mean_bpm && sm.recovery_duration_mean_s)
+			out.push(
+				`Pendant les récupérations (${fmtDuration(sm.recovery_duration_mean_s)} en moyenne), ta FC redescend de ${Math.round(sm.recovery_hr_drop_mean_bpm)} bpm.`
+			);
+		return out;
+	});
+
 	const figures = $derived([
 		{ label: 'Distance', value: fmtKm(run.distance_m), unit: 'km' },
 		{ label: 'Durée', value: fmtDuration(run.duration_s), unit: '' },
-		{ label: 'Allure moyenne', value: fmtPace(run.pace_s_per_km), unit: '/km' },
+		intervals
+			? { label: 'Allure en répétition', value: fmtPace(intervals.summary.rep_pace_mean_s_per_km), unit: '/km' }
+			: { label: 'Allure moyenne', value: fmtPace(run.pace_s_per_km), unit: '/km' },
 		{ label: 'FC moyenne', value: String(run.avg_hr_bpm ?? '–'), unit: 'bpm' },
 		{ label: 'FC max', value: String(run.max_hr_bpm ?? '–'), unit: 'bpm' },
 		{ label: 'Cadence', value: String(run.avg_cadence_spm ?? '–'), unit: 'pas/min' }
@@ -115,6 +183,7 @@
 	<header class="mt-4">
 		<h1 class="text-2xl font-semibold tracking-tight">{fmtDay(run.start_local)}</h1>
 		<p class="mt-1 text-muted">
+			{#if intervals}<span class="font-medium text-ink">Fractionné, {intervals.label}.</span>{/if}
 			Départ à {fmtTime(run.start_local)}, {run.total_kcal ?? '–'} kcal
 		</p>
 	</header>
@@ -131,7 +200,7 @@
 	</dl>
 
 	{#if coords.length > 1}
-		<div class="mt-10"><RunMap track={coords} {cursor} /></div>
+		<div class="mt-10"><RunMap track={coords} {cursor} {highlights} /></div>
 	{/if}
 
 	<section class="mt-4 space-y-6 rounded-2xl bg-surface p-5 sm:p-6" aria-label="Courbes de la sortie">
@@ -143,13 +212,86 @@
 			invert
 			format={fmtPace}
 			incrs={[30, 60, 120, 180, 300]}
+			{bands}
 			onhover={hover}
 		/>
-		<SeriesChart title="Fréquence cardiaque" unit="bpm" x={series.x} y={series.hr} onhover={hover} />
-		<SeriesChart title="Cadence" unit="pas/min" x={series.x} y={series.cadence} onhover={hover} />
+		<SeriesChart title="Fréquence cardiaque" unit="bpm" x={series.x} y={series.hr} {bands} onhover={hover} />
+		<SeriesChart title="Cadence" unit="pas/min" x={series.x} y={series.cadence} {bands} onhover={hover} />
+		{#if intervals}
+			<p class="flex items-center gap-2 text-sm text-muted">
+				<span class="inline-block h-3 w-5 rounded-[3px] bg-route-soft"></span> Répétitions
+			</p>
+		{/if}
 	</section>
 
+	{#if intervals}
+		<section class="mt-14" aria-labelledby="reps">
+			<h2 id="reps" class="text-lg font-semibold">Les répétitions</h2>
+			<ul class="mt-3 max-w-[70ch] space-y-1.5">
+				{#each insights as line (line)}<li>{line}</li>{/each}
+			</ul>
+			<div class="mt-6 overflow-x-auto">
+				<table class="w-full min-w-[36rem]">
+					<thead class="text-left text-sm text-muted">
+						<tr>
+							<th class="pb-2 font-normal">Rép.</th>
+							<th class="pb-2 text-right font-normal">Distance</th>
+							<th class="pb-2 text-right font-normal">Durée</th>
+							<th class="pb-2 pl-6 font-normal">Allure</th>
+							<th class="pb-2 text-right font-normal">FC moy. / max</th>
+							<th class="pb-2 text-right font-normal">Récupération</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#if edge('warmup')}
+							{@const w = edge('warmup')!}
+							<tr class="border-t border-rule text-muted">
+								<td class="py-2">Échauffement</td>
+								<td class="py-2 text-right">{fmtKm(w.distance_m)} km</td>
+								<td class="py-2 text-right">{fmtDuration(w.duration_s)}</td>
+								<td class="py-2 pl-6">{fmtPace(w.pace_s_per_km)}</td>
+								<td class="py-2 text-right">{w.avg_hr_bpm ? Math.round(w.avg_hr_bpm) : '–'}</td>
+								<td></td>
+							</tr>
+						{/if}
+						{#each repRows as r (r.index)}
+							<tr class="border-t border-rule">
+								<td class="py-2 font-medium">{r.index}</td>
+								<td class="py-2 text-right">{Math.round(r.distance_m)} m</td>
+								<td class="py-2 text-right">{fmtDuration(r.duration_s)}</td>
+								<td class="py-2 pl-6">
+									<div class="flex items-center gap-3">
+										<div class="h-2 rounded-r-[4px] bg-route" style="width:{r.w * 0.5}%"></div>
+										<span class={r.best ? 'font-semibold' : ''}>{fmtPace(r.pace_s_per_km)}</span>
+									</div>
+								</td>
+								<td class="py-2 text-right">
+									{r.avg_hr_bpm ? Math.round(r.avg_hr_bpm) : '–'}<span class="text-muted"> / {r.max_hr_bpm ?? '–'}</span>
+								</td>
+								<td class="py-2 text-right text-muted">
+									{#if r.rec}{fmtDuration(r.rec.duration_s)}{#if r.hrDrop}, FC −{r.hrDrop}{/if}{/if}
+								</td>
+							</tr>
+						{/each}
+						{#if edge('cooldown')}
+							{@const c = edge('cooldown')!}
+							<tr class="border-t border-rule text-muted">
+								<td class="py-2">Retour au calme</td>
+								<td class="py-2 text-right">{fmtKm(c.distance_m)} km</td>
+								<td class="py-2 text-right">{fmtDuration(c.duration_s)}</td>
+								<td class="py-2 pl-6">{fmtPace(c.pace_s_per_km)}</td>
+								<td class="py-2 text-right">{c.avg_hr_bpm ? Math.round(c.avg_hr_bpm) : '–'}</td>
+								<td></td>
+							</tr>
+						{/if}
+					</tbody>
+				</table>
+			</div>
+		</section>
+	{/if}
+
 	<div class="mt-14 grid gap-14 lg:grid-cols-2 lg:gap-12">
+		{#if !intervals}
 		<section aria-labelledby="splits">
 			<h2 id="splits" class="text-lg font-semibold">Kilomètre par kilomètre</h2>
 			<table class="mt-4 w-full">
@@ -179,7 +321,8 @@
 			</table>
 		</section>
 
-		<section aria-labelledby="zones">
+		{/if}
+		<section aria-labelledby="zones" class={intervals ? 'lg:col-span-2 lg:max-w-[calc(50%-1.5rem)]' : ''}>
 			<h2 id="zones" class="text-lg font-semibold">Temps par zone cardiaque</h2>
 			<p class="mt-1 text-sm text-muted">Calculé sur ta FC max enregistrée, {data.hrMax} bpm.</p>
 			<ul class="mt-5 space-y-4">
