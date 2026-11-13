@@ -17,6 +17,7 @@
 		height?: number;
 		incrs?: number[]; // allowed y tick steps (e.g. 30 s / 60 s for pace)
 		bands?: [number, number][]; // x ranges (km) to shade, e.g. interval reps
+		refLine?: { value: number; label: string } | null; // horizontal reference, e.g. average
 	};
 
 	let {
@@ -30,7 +31,8 @@
 		onhover,
 		height = 150,
 		incrs,
-		bands = []
+		bands = [],
+		refLine = null
 	}: Props = $props();
 
 	let el: HTMLDivElement;
@@ -85,6 +87,39 @@
 									const x1 = u.valToPos(b, 'x', true);
 									ctx.fillRect(x0, top, Math.max(1, x1 - x0), h);
 								}
+								ctx.restore();
+							}
+						],
+						// Reference line (e.g. average) over the series, labelled at the left.
+						draw: [
+							(u) => {
+								if (!refLine) return;
+								const y = u.valToPos(sign * refLine.value, 'y', true);
+								const { left, top, width, height: h } = u.bbox;
+								if (y < top || y > top + h) return;
+								const ctx = u.ctx;
+								const dpr = devicePixelRatio || 1;
+								ctx.save();
+								ctx.strokeStyle = c.ink;
+								ctx.lineWidth = 1.5 * dpr;
+								ctx.setLineDash([6 * dpr, 4 * dpr]);
+								ctx.beginPath();
+								ctx.moveTo(left, y);
+								ctx.lineTo(left + width, y);
+								ctx.stroke();
+								ctx.setLineDash([]);
+								ctx.font = `${600} ${12 * dpr}px "IBM Plex Sans Variable", sans-serif`;
+								ctx.textAlign = 'right'; // uPlot leaves the axes' alignment set: be explicit
+								ctx.textBaseline = 'bottom';
+								const text = refLine.label;
+								const tw = ctx.measureText(text).width;
+								const pad = 4 * dpr;
+								const tx = left + width - 6 * dpr;
+								const ty = y - 4 * dpr;
+								ctx.fillStyle = c.surface;
+								ctx.fillRect(tx - tw - pad, ty - 15 * dpr, tw + 2 * pad, 15 * dpr);
+								ctx.fillStyle = c.ink;
+								ctx.fillText(text, tx, ty);
 								ctx.restore();
 							}
 						],

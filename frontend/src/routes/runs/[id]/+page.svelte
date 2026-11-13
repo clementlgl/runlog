@@ -163,6 +163,14 @@
 		return out;
 	});
 
+	// Average pace line: of the reps for an interval session (the overall average
+	// would mix running with walking recoveries), of the whole run otherwise.
+	const refLine = $derived.by(() => {
+		const avg = intervals ? intervals.summary.rep_pace_mean_s_per_km : run.pace_s_per_km;
+		if (!avg) return null;
+		return { value: avg, label: `${intervals ? '' : 'Moyenne '}${fmtPace(avg)}/km` };
+	});
+
 	const figures = $derived([
 		{ label: 'Distance', value: fmtKm(run.distance_m), unit: 'km' },
 		{ label: 'Durée', value: fmtDuration(run.duration_s), unit: '' },
@@ -213,6 +221,7 @@
 			format={fmtPace}
 			incrs={[30, 60, 120, 180, 300]}
 			{bands}
+			{refLine}
 			onhover={hover}
 		/>
 		<SeriesChart title="Fréquence cardiaque" unit="bpm" x={series.x} y={series.hr} {bands} onhover={hover} />
