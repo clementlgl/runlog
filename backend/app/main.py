@@ -1,0 +1,164 @@
+"""FastAPI app: runs, per-second samples and GPS tracks from DuckDB."""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from contextlib import asynccontextmanager
+from datetime import date, timedelta
+
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
+
+from .config import BACKEND_DIR, DATA_DIR
+from .db import cursor
+from .ingest import ingest
+
+
+def _rows(sql: str, params: list | None = None) -> list[dict]:
+    with cursor() as cur:
+        res = cur.execute(sql, params or [])
+        cols = [d[0] for d in res.description]
+        return [dict(zip(cols, row, strict=True)) for row in res.fetchall()]
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    with cursor() as cur:
+        empty = cur.execute("SELECT count(*) FROM runs").fetchone()[0] == 0
+    if empty:
+        await run_in_threadpool(ingest)
+    yield
+
+
+app = FastAPI(title="Mi Fitness runs", lifespan=lifespan)
+
+
+@app.get("/api/health")
+def health() -> dict:
+    return {"status": "ok"}
+
+
+_RUN_SELECT = """
+    SELECT id, start_utc + to_seconds(coalesce(utc_offset_s, 0)) AS start_local,
+           sport, duration_s, distance_m, avg_hr_bpm, max_hr_bpm, steps, total_kcal,
+           CASE WHEN distance_m > 0 THEN round(duration_s / distance_m * 1000) END AS pace_s_per_km,
+           CASE WHEN duration_s > 0 THEN round(steps * 60.0 / duration_s) END AS avg_cadence_spm
+    FROM runs
+"""
+
+
+@app.get("/api/runs")
+def list_runs(sport: str | None = None) -> list[dict]:
+    return _rows(_RUN_SELECT + " WHERE ($1::VARCHAR IS NULL OR sport = $1) ORDER BY id DESC", [sport])
+
+
+@app.get("/api/runs/{run_id}")
+def get_run(run_id: int) -> dict:
+    rows = _rows(_RUN_SELECT + " WHERE id = ?", [run_id])
+    if not rows:
+        raise HTTPException(404, "run not found")
+    return rows[0]
+
+
+@app.get("/api/runs/{run_id}/samples")
+def run_samples(run_id: int) -> list[dict]:
+    return _rows(
+        """SELECT t_s, heart_rate_bpm, distance_m, steps, cadence_spm, pace_s_per_km
+           FROM samples WHERE run_id = ? ORDER BY t_s""",
+        [run_id],
+    )
+
+
+@app.get("/api/runs/{run_id}/track")
+def run_track(run_id: int) -> list[list[float]]:
+    """``[lon, lat, t_s]`` points; ``t_s`` aligns with ``/samples``."""
+    with cursor() as cur:
+        res = cur.execute(
+            "SELECT lon, lat, epoch_s - run_id FROM track WHERE run_id = ? ORDER BY epoch_s", [run_id]
+        )
+        return [list(r) for r in res.fetchall()]
+
+
+@app.get("/api/routes")
+def route_shapes(points: int = Query(80, ge=10, le=500)) -> dict[str, list[list[float]]]:
+    """Every run's GPS shape, thinned to about ``points`` ``[lon, lat]`` pairs (for glyphs)."""
+    rows = _rows(
+        """
+        WITH t AS (
+            SELECT run_id, lon, lat,
+                   row_number() OVER (PARTITION BY run_id ORDER BY epoch_s) - 1 AS i,
+                   count(*) OVER (PARTITION BY run_id) AS n
+            FROM track
+        )
+        SELECT run_id, list([lon, lat] ORDER BY i) AS pts
+        FROM t
+        WHERE i % greatest(1, n // ?) = 0 OR i = n - 1
+        GROUP BY run_id
+        """,
+        [points],
+    )
+    return {str(r["run_id"]): r["pts"] for r in rows}
+
+
+@app.get("/api/runs/{run_id}/splits")
+def run_splits(run_id: int) -> list[dict]:
+    """Per-kilometre splits; the last one is partial (its ``distance_m`` < 1000)."""
+    return _rows(
+        """
+        WITH s AS (
+            SELECT t_s, distance_m, heart_rate_bpm, cadence_spm,
+                   floor(distance_m / 1000)::INT AS km
+            FROM samples WHERE run_id = ? AND distance_m IS NOT NULL
+        ), b AS (
+            SELECT km, min(t_s) AS t0, max(t_s) AS t1,
+                   min(distance_m) AS d0, max(distance_m) AS d1,
+                   round(avg(heart_rate_bpm)) AS avg_hr_bpm,
+                   round(avg(cadence_spm) FILTER (WHERE cadence_spm > 0)) AS avg_cadence_spm
+            FROM s GROUP BY km
+        )
+        SELECT km + 1 AS km,
+               t1 - coalesce(lag(t1) OVER (ORDER BY km), t0) AS duration_s,
+               round(d1 - coalesce(lag(d1) OVER (ORDER BY km), d0)) AS distance_m,
+               avg_hr_bpm, avg_cadence_spm
+        FROM b ORDER BY km
+        """,
+        [run_id],
+    )
+
+
+@app.get("/api/stats/weekly")
+def weekly_stats() -> list[dict]:
+    return _rows(
+        """
+        SELECT date_trunc('week', start_utc)::DATE AS week,
+               count(*) AS runs,
+               round(sum(distance_m) / 1000, 2) AS distance_km,
+               sum(duration_s) AS duration_s,
+               round(avg(avg_hr_bpm)) AS avg_hr_bpm
+        FROM runs WHERE sport = 'running'
+        GROUP BY 1 ORDER BY 1
+        """
+    )
+
+
+@app.post("/api/ingest")
+async def reingest() -> dict:
+    return await run_in_threadpool(ingest)
+
+
+@app.post("/api/sync")
+async def sync(days: int = Query(30, ge=1, le=730)) -> dict:
+    """Fetch the last ``days`` days from the Xiaomi cloud (needs a mifit session), then ingest."""
+    end = date.today()
+    start = end - timedelta(days=days)
+    out = DATA_DIR / f"workout_detail_{start}_{end}.json"
+    cmd = [
+        sys.executable, "-I", str(BACKEND_DIR / "mifit_patch.py"),
+        "export", "workout_detail", "--from", str(start), "--to", str(end),
+        "--long", "--json", str(out),
+    ]
+    proc = await run_in_threadpool(subprocess.run, cmd, capture_output=True, text=True, timeout=900)
+    if proc.returncode != 0:
+        raise HTTPException(502, f"mifit failed: {proc.stderr.strip()[-500:]}")
+    return {"file": out.name, **(await run_in_threadpool(ingest))}

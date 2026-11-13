@@ -1,0 +1,7 @@
+data/
+.venv/
+__pycache__/
+*.partial
+node_modules/
+# mifit session lives in ~/.mifit/session.json — never copy it here
+session.json

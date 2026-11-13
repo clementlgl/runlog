@@ -1,0 +1,84 @@
+@import '@fontsource-variable/ibm-plex-sans';
+@import '@fontsource/ibm-plex-sans-condensed/500.css';
+@import '@fontsource/ibm-plex-sans-condensed/600.css';
+@import 'tailwindcss';
+
+/* Roles, not colours: dark mode re-points the same names. */
+:root {
+	--page: #f2f3f1;
+	--surface: #ffffff;
+	--ink: #16191b;
+	--muted: #5e6669;
+	--faint: #8a9194;
+	--rule: #dee1dd;
+	--route: #2f6fd6;
+	--route-soft: #dbe6f8;
+	color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--page: #121416;
+		--surface: #1a1d20;
+		--ink: #e8eae8;
+		--muted: #a0a8ab;
+		--faint: #737b7f;
+		--rule: #2b3034;
+		--route: #5b93ea;
+		--route-soft: #1f3150;
+		color-scheme: dark;
+	}
+}
+
+@theme inline {
+	--font-sans: 'IBM Plex Sans Variable', ui-sans-serif, system-ui, sans-serif;
+	--font-display: 'IBM Plex Sans Condensed', 'IBM Plex Sans Variable', ui-sans-serif, sans-serif;
+
+	--color-page: var(--page);
+	--color-surface: var(--surface);
+	--color-ink: var(--ink);
+	--color-muted: var(--muted);
+	--color-faint: var(--faint);
+	--color-rule: var(--rule);
+	--color-route: var(--route);
+	--color-route-soft: var(--route-soft);
+
+	/* Scale ~1.25 from 15px body. */
+	--text-xs: 0.8125rem;
+	--text-sm: 0.875rem;
+	--text-base: 0.9375rem;
+	--text-lg: 1.1875rem;
+	--text-xl: 1.5rem;
+	--text-2xl: 2rem;
+	--text-figure: 2.75rem;
+	--text-hero: 4.5rem;
+}
+
+@layer base {
+	html {
+		background: var(--page);
+		color: var(--ink);
+		font-family: var(--font-sans);
+		font-size: 100%;
+		-webkit-font-smoothing: antialiased;
+	}
+	body {
+		font-size: var(--text-base);
+		line-height: 1.5;
+		font-variant-numeric: tabular-nums;
+	}
+	:focus-visible {
+		outline: 2px solid var(--route);
+		outline-offset: 2px;
+		border-radius: 4px;
+	}
+}
+
+/* Big condensed figures: the stopwatch voice of the app. */
+@utility figure {
+	font-family: var(--font-display);
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	line-height: 1;
+	font-variant-numeric: tabular-nums;
+}

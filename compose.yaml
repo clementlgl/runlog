@@ -1,0 +1,24 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - ./data:/data
+      # mifit session (needed by POST /api/sync). Read-write: mifit renews it.
+      - ${HOME}/.mifit:/home/app/.mifit
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    environment:
+      API_URL: http://backend:8000
+      ORIGIN: http://localhost:3000
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
