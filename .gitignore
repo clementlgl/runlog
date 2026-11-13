@@ -1,4 +1,6 @@
 data/
+# local config (ports, ORIGIN, paths); .env.example is the template
+.env
 .venv/
 __pycache__/
 *.partial

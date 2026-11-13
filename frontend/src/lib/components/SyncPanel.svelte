@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Choose the day range to fetch from the Xiaomi cloud, then run the sync.
 	import { onMount, untrack } from 'svelte';
+	import XiaomiAccount from './XiaomiAccount.svelte';
 
 	type Props = { lastRun?: string; onsynced?: () => Promise<void> | void };
 	let { lastRun, onsynced }: Props = $props();
@@ -157,7 +158,8 @@
 </script>
 
 <section class="rounded-2xl bg-surface p-5 sm:p-6" aria-labelledby="sync-title">
-	<h2 id="sync-title" class="font-semibold">Récupérer mes sorties</h2>
+	<XiaomiAccount />
+	<h2 id="sync-title" class="mt-5 font-semibold">Récupérer mes sorties</h2>
 	<p class="mt-1 text-sm text-muted">
 		Seules les sorties absentes de l'application sont ajoutées. Une longue période peut prendre plusieurs minutes.
 	</p>

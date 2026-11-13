@@ -12,6 +12,7 @@ from fastapi.concurrency import run_in_threadpool
 from .db import cursor
 from .analysis import analyse_runs, ensure_analysed
 from .ingest import ingest
+from .login_job import LoginManager, session_info
 from .sync_job import SyncManager
 
 
@@ -34,6 +35,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Runlog", lifespan=lifespan)
 sync_manager = SyncManager()
+login_manager = LoginManager()
 
 
 @app.get("/api/health")
@@ -184,6 +186,27 @@ def sync_range(days: int | None, from_date: date | None, to_date: date | None) -
     if (end - start).days > MAX_SYNC_DAYS:
         raise HTTPException(422, f"Plage trop longue : {MAX_SYNC_DAYS} jours au maximum.")
     return start, end
+
+
+@app.get("/api/session")
+def xiaomi_session() -> dict:
+    """Is a Xiaomi session stored (and since when)? Never returns its secrets."""
+    return session_info()
+
+
+@app.post("/api/login", status_code=202)
+def xiaomi_login(response: Response) -> dict:
+    """Start a Xiaomi login: returns ``login_url`` to open and approve; poll
+    ``GET /api/login``. 409 (with the current state) if one is already waiting."""
+    state, started = login_manager.start()
+    if not started:
+        response.status_code = 409
+    return state
+
+
+@app.get("/api/login")
+def xiaomi_login_state() -> dict | None:
+    return login_manager.state()
 
 
 @app.post("/api/sync", status_code=202)

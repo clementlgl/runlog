@@ -17,9 +17,35 @@ docker compose up -d --build
 - App : http://localhost:3000
 - API + docs : http://localhost:8000/docs
 
+## Configuration
+
+Optionnelle : copier `.env.example` en `.env` (non versionné) et ajuster. Sans `.env`, les valeurs par défaut conviennent à un poste local.
+
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `RUNLOG_BIND` | `127.0.0.1` | Interface d'écoute de l'app (`0.0.0.0` pour la joindre depuis le LAN, derrière Caddy) |
+| `RUNLOG_PORT` | `3000` | Port de l'app sur l'hôte |
+| `RUNLOG_ORIGIN` | `http://localhost:<RUNLOG_PORT>` | URL publique exacte de l'app ; à défaut, la synchro est refusée (CSRF) |
+| `BACKEND_BIND` / `BACKEND_PORT` | `127.0.0.1` / `8000` | API et `/docs`, inutiles à l'app |
+| `MIFIT_REGION` | `de` | Région du compte Xiaomi, imposée à la connexion (`de` = Europe) |
+| `MIFIT_SESSION_DIR` | `~/.mifit` | Dossier contenant `session.json` |
+| `RUNLOG_DATA_DIR` | `./data` | Exports JSON et base `runs.duckdb` |
+
+Exemple derrière un reverse proxy :
+
+```ini
+RUNLOG_BIND=0.0.0.0
+RUNLOG_ORIGIN=https://runlog.example.com
+MIFIT_SESSION_DIR=/opt/runlog/mifit-session
+RUNLOG_DATA_DIR=/opt/runlog/data
+```
+
 ## Session Xiaomi
 
-`~/.mifit/session.json` est monté dans le backend (utilisé par `POST /api/sync`).
+Connexion depuis l'app : panneau **Synchroniser**, bouton **Se connecter à Xiaomi**. La page de connexion Xiaomi s'ouvre dans un nouvel onglet : s'y connecter à son compte et valider ; la session est enregistrée avec la région `MIFIT_REGION`.
+
+`session.json` (dossier `MIFIT_SESSION_DIR`) est monté dans le backend, utilisé par la synchro.
+Il donne accès à tout le compte Xiaomi : `chmod 600`, jamais dans git.
 Après un `mifit login`, remettre `"region": "de"` dans ce fichier (compte FR).
 
 ## API
