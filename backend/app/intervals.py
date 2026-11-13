@@ -1,22 +1,22 @@
-"""Interval-session detection from per-second distance samples.
+"""Interval-session detection from per-second distance and cadence samples.
 
-Pipeline:
-1. Speed smoothed over a centred 20 s window (raw 1 Hz distance is too noisy).
-2. Otsu threshold on that speed splits the run into fast / slow; runs shorter than
-   ``MIN_SEG_S`` are merged into their neighbours (traffic lights, GPS jitter).
-3. Fast segments are repetition candidates and slow segments between them are
-   recoveries. Both work for walked recoveries (fast = running) and jogged ones
-   (fast = reps, warm-up then sits in the first slow segment).
-4. A warm-up that flows straight into rep 1 (no pause) shares its fast segment:
-   it is split off where speed reaches the reps' pace. Same for a cool-down.
-5. The session counts as intervals when it has >= ``MIN_REPS`` reps with a clear
-   speed contrast to the recoveries.
-6. All reps of a session cover the same distance: pieces of a rep split by a short
-   slowdown are merged, then each rep is realigned to the quickest window of the
-   session's target distance (``equalise_reps``). The label snaps that distance to
-   a standard one (400 m, 500 m...).
-
-Pure Python on purpose: a run is a few thousand points.
+Pipeline (all durations in *active* seconds: watch pauses don't count):
+1. Speed smoothed over 21 s (finds efforts) and over 5 s (places their edges).
+2. Run/walk split: when cadence is clearly two-level (running ~170, walking ~105,
+   threshold ``WALK_RUN_CADENCE``), running blocks come from cadence: crisp,
+   GPS-free boundaries. Otherwise (jogged recoveries, no cadence) an Otsu
+   threshold on speed splits fast/slow. Runs under ``MIN_SEG_S`` are merged away.
+3. Inside each running block, the rep core is the stretch at rep pace (>= 90 % of
+   the reference rep speed). A warm-up flowing into rep 1, or the jog into and out
+   of each effort, stays outside it.
+4. The session counts as intervals with >= ``MIN_REPS`` reps, recoveries of at
+   least ``MIN_RECOVERY_S``, and a clear contrast between reps and recoveries in
+   speed, or in cadence backed by a smaller speed gap.
+5. All reps cover the same distance: the target is the cores' median distance,
+   and each rep becomes the quickest window of that distance inside its running
+   block (cadence path) or around it (speed path, ``equalise_reps``). The label
+   and rep paces use the nominal distance (400 m, 500 m...), so GPS error doesn't
+   skew one rep's pace against another.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ import statistics as st
 from dataclasses import asdict, dataclass, field
 
 SMOOTH_HALF_S = 10  # centred window = 21 s
+EDGE_SMOOTH_HALF_S = 2  # 5 s window to place rep edges
 MIN_SEG_S = 20  # shorter fast/slow runs are noise
 MIN_REPS = 3
 MIN_CONTRAST = 1.3  # median rep speed / median recovery speed
@@ -33,6 +34,15 @@ REP_PACE_TOLERANCE = 0.9  # a rep holds >= 90 % of the reference rep speed
 EDGE_REP_MIN_RATIO = 0.4  # first/last 'rep' shorter than 40 % of the median is warm-up/cool-down
 MAX_REP_S = 20 * 60
 PACE_GAP_S = 30  # dips below rep pace shorter than this stay inside the rep
+
+# Cadence (steps/min): running ~160-180, walking ~95-115, and it switches within a
+# second, without GPS noise.
+CADENCE_HALF_S = 3  # rolling median over 7 s
+WALK_RUN_CADENCE = 135  # below: walking, above: running
+MIN_WALK_SHARE = 0.1  # walking must be >= 10 % of the session to use cadence segmentation
+MIN_CADENCE_GAP = 35  # run and walk cadence levels at least this far apart
+MIN_CADENCE_CONTRAST = 1.3  # rep cadence / recovery cadence (walked recoveries ~1.6)
+MIN_CONTRAST_WITH_CADENCE = 1.15  # speed contrast still required alongside cadence
 
 # Equal-distance realignment: every rep of a session covers the same distance.
 MERGE_GAP_RATIO = 0.5  # a "recovery" under half the median one splits a single rep
@@ -48,7 +58,8 @@ class Segment:
     index: int  # 1-based within its kind (rep 1, rep 2...), 0 for warm-up/cool-down
     t0: int
     t1: int  # exclusive
-    distance_m: float
+    distance_m: float  # nominal for reps, GPS-measured otherwise
+    gps_distance_m: float
     duration_s: int
     pace_s_per_km: float | None
     avg_hr_bpm: float | None
@@ -85,11 +96,11 @@ def _forward_fill(values: list[float | None]) -> list[float]:
     return out
 
 
-def smoothed_speed(t: list[int], d: list[float]) -> list[float]:
+def smoothed_speed(t: list[int], d: list[float], half: int = SMOOTH_HALF_S) -> list[float]:
     n = len(d)
     out = []
     for i in range(n):
-        a, b = max(0, i - SMOOTH_HALF_S), min(n - 1, i + SMOOTH_HALF_S)
+        a, b = max(0, i - half), min(n - 1, i + half)
         dt = t[b] - t[a]
         out.append((d[b] - d[a]) / dt if dt > 0 else 0.0)
     return out
@@ -150,9 +161,50 @@ def _merge_short(runs: list[list], min_len: int) -> list[list]:
     return runs
 
 
-def _fastest_window(t: list[int], d: list[float], lo: int, hi: int, dist: float) -> tuple[int, int] | None:
+def smoothed_cadence(cad: list[int | None]) -> list[float | None]:
+    """Rolling median over ``CADENCE_HALF_S`` each side; 0 counts as missing."""
+    out: list[float | None] = []
+    for i in range(len(cad)):
+        w = [c for c in cad[max(0, i - CADENCE_HALF_S) : i + CADENCE_HALF_S + 1] if c]
+        out.append(st.median(w) if w else None)
+    return out
+
+
+def cadence_walk_threshold(cad_s: list[float | None]) -> float | None:
+    """``WALK_RUN_CADENCE`` when the session clearly has both walking and running,
+    else ``None``.
+
+    Needs enough cadence data, a walking share of at least ``MIN_WALK_SHARE``, and
+    walking and running levels at least ``MIN_CADENCE_GAP`` apart. The threshold is
+    physiological rather than fitted: a fitted one drifted into the walking cluster.
+    """
+    vals = [c for c in cad_s if c]
+    if len(vals) < 0.5 * len(cad_s) or len(vals) < 120:
+        return None
+    low = [c for c in vals if c < WALK_RUN_CADENCE]
+    high = [c for c in vals if c >= WALK_RUN_CADENCE]
+    if len(low) < MIN_WALK_SHARE * len(vals) or not high:
+        return None
+    if st.median(high) - st.median(low) < MIN_CADENCE_GAP:
+        return None
+    return WALK_RUN_CADENCE
+
+
+def _median_present(xs: list[float | None], spans: list[tuple[int, int]]) -> float | None:
+    vals = [x for a, b in spans for x in xs[a:b] if x]
+    return st.median(vals) if vals else None
+
+
+def _fastest_window(
+    t: list[int],
+    d: list[float],
+    lo: int,
+    hi: int,
+    dist: float,
+) -> tuple[int, int] | None:
     """Indices ``(i, j)`` in ``[lo, hi)`` with ``d[j] - d[i] >= dist`` and the least
-    ``t[j] - t[i]``: the quickest ``dist`` metres in that range (two pointers, O(n))."""
+    ``t[j] - t[i]``: the quickest ``dist`` metres in that range (two pointers, O(n)).
+    """
     best: tuple[int, int] | None = None
     j = lo
     for i in range(lo, hi):
@@ -166,8 +218,103 @@ def _fastest_window(t: list[int], d: list[float], lo: int, hi: int, dist: float)
     return best
 
 
+def _reps_from_speed(
+    v: list[float], fast: list[list], seg_speed, v_edge: list[float] | None = None
+) -> list[tuple[int, int]]:
+    """Reps from speed alone (no usable cadence, or jogged recoveries).
+
+    ``v`` (heavily smoothed) finds the reps; ``v_edge`` (lightly smoothed) then
+    places their edges, since heavy smoothing pulls a sharp start/stop inwards.
+    """
+    # Rep pace reference: the faster half of the fast segments, so warm-up jogs
+    # broken up by walking breaks don't drag it down.
+    speeds = sorted(seg_speed(a, b) for _, a, b in fast)
+    ref = st.median(speeds[len(speeds) // 2 :])
+
+    # Inside each fast segment, the rep spans from the first to the last stretch at
+    # rep pace (dips shorter than PACE_GAP_S ignored). A slower lead-in (warm-up
+    # flowing into rep 1) or tail (cool-down) is left out; a fast segment never at
+    # rep pace (warm-up jog between walking breaks) is not a rep.
+    at_pace = [x >= REP_PACE_TOLERANCE * ref for x in v]
+    reps: list[tuple[int, int]] = []
+    for _, a, b in fast:
+        sub = [r for r in _merge_short(_runs(at_pace[a:b]), PACE_GAP_S) if r[0]]
+        if not sub:
+            continue
+        # Gap tolerance fills dips inside a rep, not its edges: trim to the first
+        # and last samples really at pace.
+        lo, hi = a + sub[0][1], a + sub[-1][2]
+        while lo < hi and not at_pace[lo]:
+            lo += 1
+        while hi > lo and not at_pace[hi - 1]:
+            hi -= 1
+        if v_edge is not None:
+            edge_thr = REP_PACE_TOLERANCE * ref
+            while lo > a and v_edge[lo - 1] >= edge_thr:
+                lo -= 1
+            while hi < b and v_edge[hi] >= edge_thr:
+                hi += 1
+        if hi - lo >= MIN_SEG_S:
+            reps.append((lo, hi))
+    # A short first/last fragment is the tail of the warm-up or the start of the cool-down.
+    while len(reps) > MIN_REPS:
+        med = st.median(b - a for a, b in reps)
+        if reps[0][1] - reps[0][0] < EDGE_REP_MIN_RATIO * med:
+            reps.pop(0)
+        elif reps[-1][1] - reps[-1][0] < EDGE_REP_MIN_RATIO * med:
+            reps.pop()
+        else:
+            break
+    return reps
+
+
+def reps_from_cadence(
+    t: list[int], d: list[float], v: list[float], runs: list[list], seg_speed, v_edge: list[float]
+) -> tuple[list[tuple[int, int]], float]:
+    """Reps for walked recoveries: one rep per cadence running block.
+
+    A running block (between two walks) also holds the jog into and out of the
+    effort, so it is the *search region*, not the rep: the rep core is found by
+    speed inside it, the target distance is the cores' median, and each rep is the
+    quickest window of that distance inside its block. Reps can't contain walking.
+
+    Returns the rep spans and the target (measured) distance.
+    """
+    blocks = [(a, b) for f, a, b in runs if f]
+    if len(blocks) < MIN_REPS:
+        return [], 0.0
+    gaps = [t[blocks[k + 1][0]] - t[blocks[k][1] - 1] for k in range(len(blocks) - 1)]
+    med_gap = st.median(gaps)
+    merged = [blocks[0]]
+    for k, gap in enumerate(gaps):
+        if gap < MERGE_GAP_RATIO * med_gap:  # a short walk splitting one rep
+            merged[-1] = (merged[-1][0], blocks[k + 1][1])
+        else:
+            merged.append(blocks[k + 1])
+
+    cores = _reps_from_speed(v, [[True, a, b] for a, b in merged], seg_speed, v_edge)
+    if len(cores) < MIN_REPS:
+        return [], 0.0
+    dist = lambda a, b: d[b - 1] - d[a]  # noqa: E731
+    med = st.median(dist(a, b) for a, b in cores)
+    target = st.median(x for x in (dist(a, b) for a, b in cores) if x >= FRAGMENT_RATIO * med)
+
+    windows: list[tuple[int, int]] = []
+    for a, b in cores:
+        ba, bb = next((x for x in merged if x[0] <= a and b <= x[1]), (a, b))
+        w = _fastest_window(t, d, ba, bb, target)
+        windows.append((w[0], w[1] + 1) if w else (ba, bb))
+    # A window clearly slower than the others is a warm-up/cool-down block, not a rep.
+    speed = lambda a, b: dist(a, b) / max(1, t[b - 1] - t[a])  # noqa: E731
+    med_speed = st.median(speed(a, b) for a, b in windows)
+    reps = [w for w in windows if speed(*w) >= KEEP_SPEED_RATIO * med_speed]
+    return reps, target
+
+
 def equalise_reps(
-    t: list[int], d: list[float], reps: list[tuple[int, int]]
+    t: list[int],
+    d: list[float],
+    reps: list[tuple[int, int]],
 ) -> tuple[list[tuple[int, int]], float]:
     """Realign ``reps`` (``[a, b)`` index spans) so they all cover the same distance.
 
@@ -237,17 +384,30 @@ def analyse(samples: list[dict]) -> Analysis:
     """``samples``: dicts with t_s, distance_m, heart_rate_bpm, cadence_spm, ordered by t_s."""
     if len(samples) < 5 * 60:
         return Analysis(False)
-    t = [s["t_s"] for s in samples]
+    t_wall = [s["t_s"] for s in samples]  # wall-clock offsets, for output only
+    # Computations run on active time: one sample per second, so watch pauses
+    # (gaps in t_s) don't count as slow running.
+    t = list(range(len(samples)))
     d = _forward_fill([s.get("distance_m") for s in samples])
     hr = [s.get("heart_rate_bpm") for s in samples]
     cad = [s.get("cadence_spm") for s in samples]
     v = smoothed_speed(t, d)
+    v_edge = smoothed_speed(t, d, EDGE_SMOOTH_HALF_S)
 
     moving = [x for x in v if x > 0.3]
     if len(moving) < 60:
         return Analysis(False)
     thr = otsu(moving)
-    runs = _merge_short(_runs([x > thr for x in v]), MIN_SEG_S)
+
+    # Running vs walking from cadence when it is clearly two-level: crisp, GPS-free
+    # boundaries. Otherwise (jogged recoveries, no cadence) fall back to speed.
+    cad_s = smoothed_cadence(cad)
+    walk_thr = cadence_walk_threshold(cad_s)
+    if walk_thr is not None:
+        running = [c is not None and c >= walk_thr for c in cad_s]
+    else:
+        running = [x > thr for x in v]
+    runs = _merge_short(_runs(running), MIN_SEG_S)
 
     fast = [r for r in runs if r[0]]
     if len(fast) < MIN_REPS:
@@ -256,30 +416,11 @@ def analyse(samples: list[dict]) -> Analysis:
     def seg_speed(a: int, b: int) -> float:
         return (d[b - 1] - d[a]) / max(1, t[b - 1] - t[a])
 
-    # Rep pace reference: the faster half of the fast segments, so warm-up jogs
-    # broken up by walking breaks don't drag it down.
-    speeds = sorted(seg_speed(a, b) for _, a, b in fast)
-    ref = st.median(speeds[len(speeds) // 2 :])
+    if walk_thr is not None:
+        reps, target_m = reps_from_cadence(t, d, v, runs, seg_speed, v_edge)
+    else:
+        reps, target_m = _reps_from_speed(v, fast, seg_speed, v_edge), 0.0
 
-    # Inside each fast segment, the rep spans from the first to the last stretch at
-    # rep pace (dips shorter than PACE_GAP_S ignored). A slower lead-in (warm-up
-    # flowing into rep 1) or tail (cool-down) is left out; a fast segment never at
-    # rep pace (warm-up jog between walking breaks) is not a rep.
-    at_pace = [x >= REP_PACE_TOLERANCE * ref for x in v]
-    reps: list[tuple[int, int]] = []
-    for _, a, b in fast:
-        sub = [r for r in _merge_short(_runs(at_pace[a:b]), PACE_GAP_S) if r[0]]
-        if sub and sub[-1][2] - sub[0][1] >= MIN_SEG_S:
-            reps.append((a + sub[0][1], a + sub[-1][2]))
-    # A short first/last fragment is the tail of the warm-up or the start of the cool-down.
-    while len(reps) > MIN_REPS:
-        med = st.median(b - a for a, b in reps)
-        if reps[0][1] - reps[0][0] < EDGE_REP_MIN_RATIO * med:
-            reps.pop(0)
-        elif reps[-1][1] - reps[-1][0] < EDGE_REP_MIN_RATIO * med:
-            reps.pop()
-        else:
-            break
     recs = [(reps[k][1], reps[k + 1][0]) for k in range(len(reps) - 1)]
 
     if len(reps) < MIN_REPS or not recs:
@@ -288,26 +429,40 @@ def analyse(samples: list[dict]) -> Analysis:
     rec_v = st.median(seg_speed(a, b) for a, b in recs)
     rep_dur = st.median(t[b - 1] - t[a] for a, b in reps)
     rec_dur = st.median(t[b - 1] - t[a] for a, b in recs)
-    if rec_v <= 0 or rep_v / rec_v < MIN_CONTRAST or rep_dur > MAX_REP_S or rec_dur < MIN_RECOVERY_S:
+    # Contrast evidence: speed, or cadence (run vs walk) backed by a smaller speed gap.
+    speed_ratio = rep_v / rec_v if rec_v > 0 else float("inf")
+    rep_c = _median_present(cad_s, reps)
+    rec_c = _median_present(cad_s, recs)
+    cad_ratio = rep_c / rec_c if rep_c and rec_c else 1.0
+    contrast = speed_ratio >= MIN_CONTRAST or (
+        cad_ratio >= MIN_CADENCE_CONTRAST and speed_ratio >= MIN_CONTRAST_WITH_CADENCE
+    )
+    if not contrast or rep_dur > MAX_REP_S or rec_dur < MIN_RECOVERY_S:
         return Analysis(False)
 
-    # It is an interval session: now snap every rep to the same distance.
-    reps, target_m = equalise_reps(t, d, reps)
-    if len(reps) < MIN_REPS:
-        return Analysis(False)
-    recs = [(reps[k][1], reps[k + 1][0]) for k in range(len(reps) - 1)]
+    # It is an interval session. Without cadence, snap every rep to the same distance
+    # (cadence blocks already give exact reps).
+    if walk_thr is None:
+        reps, target_m = equalise_reps(t, d, reps)
+        if len(reps) < MIN_REPS:
+            return Analysis(False)
+        recs = [(reps[k][1], reps[k + 1][0]) for k in range(len(reps) - 1)]
+    nominal_m = nominal_distance(target_m)
 
     def make(kind: str, idx: int, a: int, b: int) -> Segment:
         h = [x for x in hr[a:b] if x]
         c = [x for x in cad[a:b] if x]
-        dist = d[b - 1] - d[a]
-        dur = t[b - 1] - t[a] + 1
+        gps = d[b - 1] - d[a]
+        # Reps all cover the nominal distance; GPS error would otherwise skew their pace.
+        dist = float(nominal_m) if kind == "work" else gps
+        dur = b - a  # active seconds
         return Segment(
             kind=kind,
             index=idx,
-            t0=t[a],
-            t1=t[b - 1] + 1,
+            t0=t_wall[a],
+            t1=t_wall[b - 1] + 1,
             distance_m=round(dist, 1),
+            gps_distance_m=round(gps, 1),
             duration_s=dur,
             pace_s_per_km=round(dur / dist * 1000, 1) if dist > 1 else None,
             avg_hr_bpm=round(st.mean(h), 1) if h else None,
@@ -335,7 +490,7 @@ def analyse(samples: list[dict]) -> Analysis:
 
     # Reps are equal-distance by construction: label by the nominal distance.
     cv = lambda xs: st.pstdev(xs) / st.mean(xs) if len(xs) > 1 and st.mean(xs) else 0.0  # noqa: E731
-    label = f"{len(work)} × {nominal_distance(target_m)} m"
+    label = f"{len(work)} × {nominal_m} m"
 
     n2 = min(2, len(paces) // 2) or 1
     fade = (st.mean(paces[-n2:]) / st.mean(paces[:n2]) - 1) * 100 if paces else None
@@ -359,6 +514,7 @@ def analyse(samples: list[dict]) -> Analysis:
         "recovery_hr_drop_mean_bpm": round(st.mean(hr_drops), 1) if hr_drops else None,
         "speed_threshold_mps": round(thr, 2),
         "rep_target_m": round(target_m, 1),  # measured (watch) distance every rep is aligned to
-        "rep_nominal_m": nominal_distance(target_m),
+        "rep_nominal_m": nominal_m,
+        "segmentation": "cadence" if walk_thr is not None else "speed",
     }
     return Analysis(True, label, segments, summary)

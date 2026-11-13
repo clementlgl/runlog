@@ -257,7 +257,9 @@
 						{#each repRows as r (r.index)}
 							<tr class="border-t border-rule">
 								<td class="py-2 font-medium">{r.index}</td>
-								<td class="py-2 text-right">{Math.round(r.distance_m)} m</td>
+								<td class="py-2 text-right" title={r.gps_distance_m ? `Mesuré par GPS : ${Math.round(r.gps_distance_m)} m` : undefined}>
+									{Math.round(r.distance_m)} m
+								</td>
 								<td class="py-2 text-right">{fmtDuration(r.duration_s)}</td>
 								<td class="py-2 pl-6">
 									<div class="flex items-center gap-3">

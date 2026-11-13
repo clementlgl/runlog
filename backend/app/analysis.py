@@ -7,7 +7,7 @@ import json
 from .db import cursor
 from .intervals import analyse
 
-ANALYSIS_VERSION = 2  # bump to force recomputation after an algorithm change
+ANALYSIS_VERSION = 3  # bump to force recomputation after an algorithm change
 
 
 def analyse_runs(run_ids: list[int] | None = None) -> dict:

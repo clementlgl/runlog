@@ -47,7 +47,8 @@ export type IntervalSegment = {
 	index: number;
 	t0: number;
 	t1: number;
-	distance_m: number;
+	distance_m: number; // nominal for reps, GPS-measured otherwise
+	gps_distance_m?: number;
 	duration_s: number;
 	pace_s_per_km: number | null;
 	avg_hr_bpm: number | null;
