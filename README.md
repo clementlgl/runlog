@@ -1,4 +1,4 @@
-# mifitness-fetch
+# Runlog
 
 Analyse des courses Mi Fitness : FastAPI + DuckDB (backend) et SvelteKit (frontend), lancés avec Docker Compose.
 

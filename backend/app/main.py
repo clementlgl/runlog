@@ -32,7 +32,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Mi Fitness runs", lifespan=lifespan)
+app = FastAPI(title="Runlog", lifespan=lifespan)
 sync_manager = SyncManager()
 
 

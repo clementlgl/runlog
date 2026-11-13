@@ -1,3 +1,5 @@
+name: runlog
+
 services:
   backend:
     build: ./backend

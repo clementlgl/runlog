@@ -40,7 +40,7 @@
 	let syncOpen = $state(false);
 </script>
 
-<svelte:head><title>Mes courses</title></svelte:head>
+<svelte:head><title>Runlog</title></svelte:head>
 
 <main class="mx-auto max-w-5xl px-4 pt-10 pb-20 sm:px-8 sm:pt-14">
 	<header class="flex flex-wrap items-start justify-between gap-x-8 gap-y-4">

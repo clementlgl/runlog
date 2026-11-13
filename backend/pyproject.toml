@@ -1,5 +1,5 @@
 [project]
-name = "mifitness-backend"
+name = "runlog-backend"
 version = "0.1.0"
 description = "API FastAPI + DuckDB pour analyser les courses Mi Fitness"
 authors = [
