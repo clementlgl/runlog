@@ -30,17 +30,24 @@ def _load(path: Path) -> list[dict]:
 
 
 def ingest(data_dir: Path = DATA_DIR) -> dict:
-    """Read every ``workout_detail*.json`` in ``data_dir`` and upsert runs."""
+    """Add the runs found in ``data_dir``'s ``workout_detail*.json`` files that are
+    not in the database yet. Append-only: runs already stored are never deleted or
+    overwritten, so syncing the same period again changes nothing."""
+    with cursor() as cur:
+        known = {r[0] for r in cur.execute("SELECT id FROM runs").fetchall()}
+
     workouts: dict[int, dict] = {}
     for path in sorted(data_dir.glob("workout_detail*.json")):
         for rec in _load(path):
-            w = rec["workout"]
-            if w.get("start_epoch_s") is None:
+            run_id = rec["workout"].get("start_epoch_s")
+            if run_id is None:
                 continue
-            workouts[w["start_epoch_s"]] = rec  # later files win
+            if run_id not in known and run_id not in workouts:
+                workouts[run_id] = rec
 
+    empty = {"new_runs": 0, "already_stored": len(known), "samples": 0, "track_points": 0}
     if not workouts:
-        return {"runs": 0, "samples": 0, "track_points": 0}
+        return empty
 
     runs, samples, track = [], [], []
     for run_id, rec in workouts.items():
@@ -83,12 +90,9 @@ def ingest(data_dir: Path = DATA_DIR) -> dict:
     runs_df = pl.DataFrame(runs)  # noqa: F841 — referenced by name in SQL
     samples_df = pl.DataFrame(samples, schema=_SAMPLE_SCHEMA)  # noqa: F841
     track_df = pl.DataFrame(track, schema=_TRACK_SCHEMA)  # noqa: F841
-    ids_df = pl.DataFrame({"id": list(workouts)})  # noqa: F841
 
     with cursor() as cur:
         cur.execute("BEGIN")
-        for table, key in (("samples", "run_id"), ("track", "run_id"), ("runs", "id")):
-            cur.execute(f"DELETE FROM {table} WHERE {key} IN (SELECT id FROM ids_df)")
         cur.execute(
             """
             INSERT INTO runs
@@ -102,7 +106,13 @@ def ingest(data_dir: Path = DATA_DIR) -> dict:
         cur.execute("COMMIT")
 
     kinds = analyse_runs([r["id"] for r in runs if r["sport"] == "running"])
-    return {"runs": len(runs), "samples": len(samples), "track_points": len(track), **kinds}
+    return {
+        "new_runs": len(runs),
+        "already_stored": len(known),
+        "samples": len(samples),
+        "track_points": len(track),
+        **kinds,
+    }
 
 
 if __name__ == "__main__":
