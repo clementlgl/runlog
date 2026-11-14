@@ -8,6 +8,32 @@ frontend/  SvelteKit 3 + Tailwind 4, proxy /api/* -> backend
 data/      exports JSON mifit + runs.duckdb (non versionné)
 ```
 
+## Technologies
+
+**Backend**
+
+- [Python](https://www.python.org/) 3.12, dépendances gérées avec [Poetry](https://python-poetry.org/)
+- [FastAPI](https://fastapi.tiangolo.com/) servi par [Uvicorn](https://www.uvicorn.org/)
+- [DuckDB](https://duckdb.org/) : base embarquée (séances, échantillons, traces GPS, analyses)
+- [Polars](https://pola.rs/) et [PyArrow](https://arrow.apache.org/docs/python/) : ingestion des exports JSON
+- [mifit](https://pypi.org/project/mifit/) : client du cloud Xiaomi Mi Fitness (connexion, synchro)
+- [pytest](https://pytest.org/) pour les tests, [Ruff](https://docs.astral.sh/ruff/) pour le lint et le formatage
+
+**Frontend**
+
+- [SvelteKit](https://svelte.dev/docs/kit) 3 (Svelte 5) avec `adapter-node`, en [TypeScript](https://www.typescriptlang.org/)
+- [Vite](https://vite.dev/) pour le dev et le build, [pnpm](https://pnpm.io/) pour les paquets
+- [Tailwind CSS](https://tailwindcss.com/) 4, polices IBM Plex Sans et Sans Condensed
+- [MapLibre GL JS](https://maplibre.org/) avec les tuiles [OpenFreeMap](https://openfreemap.org/) : carte des parcours
+- [uPlot](https://github.com/leeoniya/uPlot) : graphiques FC, allure, cadence
+- [Prettier](https://prettier.io/) et `svelte-check` pour le formatage et le typage
+
+**Outillage**
+
+- [Docker Compose](https://docs.docker.com/compose/) : lancement de l'app (images Python et Node)
+- [GitHub Actions](https://docs.github.com/actions) : CI
+- [pre-commit](https://pre-commit.com/) : hooks avant chaque commit
+
 ## Lancer
 
 ```bash
