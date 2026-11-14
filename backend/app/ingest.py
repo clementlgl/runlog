@@ -10,7 +10,7 @@ import polars as pl
 
 from .analysis import analyse_runs
 from .config import DATA_DIR
-from .db import cursor
+from .db import cursor, mark_done
 
 _SAMPLE_SCHEMA = {
     "run_id": pl.Int64,
@@ -26,8 +26,18 @@ _SAMPLE_SCHEMA = {
 _TRACK_SCHEMA = {"run_id": pl.Int64, "epoch_s": pl.Int64, "lat": pl.Float64, "lon": pl.Float64}
 
 
-def _load(path: Path) -> list[dict]:
-    return json.loads(path.read_text())["records"]
+def _load(path: Path) -> tuple[list[dict], dict[int, int]]:
+    """An export's records, and the watch's VO2max per run start epoch.
+
+    The VO2max is only in the raw (non-normalised) workouts, alongside ``records``.
+    """
+    doc = json.loads(path.read_text())
+    vo2 = {
+        w["start_time"]: w["vo2_max"]
+        for w in (r.get("workout") or {} for r in doc.get("raw") or [])
+        if w.get("start_time") is not None and w.get("vo2_max")
+    }
+    return doc["records"], vo2
 
 
 def ingest(
@@ -42,8 +52,11 @@ def ingest(
         known = {r[0] for r in cur.execute("SELECT id FROM runs").fetchall()}
 
     workouts: dict[int, dict] = {}
+    vo2: dict[int, int] = {}
     for path in sorted(data_dir.glob("workout_detail*.json")):
-        for rec in _load(path):
+        records, file_vo2 = _load(path)
+        vo2.update(file_vo2)
+        for rec in records:
             run_id = rec["workout"].get("start_epoch_s")
             if run_id is None:
                 continue
@@ -71,6 +84,7 @@ def ingest(
                 "avg_hr_bpm": w.get("avg_hr_bpm"),
                 "max_hr_bpm": w.get("max_hr_bpm"),
                 "steps": w.get("steps"),
+                "vo2_max_watch": vo2.get(run_id),
             }
         )
         for s in rec.get("samples") or []:
@@ -102,7 +116,8 @@ def ingest(
             """
             INSERT INTO runs
             SELECT id, to_timestamp(start_epoch_s)::TIMESTAMP, utc_offset_s, sport, sport_code,
-                   duration_s, distance_m, active_kcal, total_kcal, avg_hr_bpm, max_hr_bpm, steps
+                   duration_s, distance_m, active_kcal, total_kcal, avg_hr_bpm, max_hr_bpm, steps,
+                   vo2_max_watch::SMALLINT
             FROM runs_df
             """
         )
@@ -121,6 +136,24 @@ def ingest(
         "track_points": len(track),
         **kinds,
     }
+
+
+WATCH_VO2_BACKFILL = "backfill:vo2_max_watch"
+
+
+def backfill_watch_vo2(data_dir: Path = DATA_DIR) -> int:
+    """Fill the watch's VO2max of stored runs that have none, from the exports,
+    then record it as done (see ``WATCH_VO2_BACKFILL``). Returns the runs updated."""
+    vo2: dict[int, int] = {}
+    for path in sorted(data_dir.glob("workout_detail*.json")):
+        vo2.update(_load(path)[1])
+    with cursor() as cur:
+        missing = {r[0] for r in cur.execute("SELECT id FROM runs WHERE vo2_max_watch IS NULL").fetchall()}
+        rows = [(v, run_id) for run_id, v in vo2.items() if run_id in missing]
+        if rows:
+            cur.executemany("UPDATE runs SET vo2_max_watch = ? WHERE id = ?", rows)
+    mark_done(WATCH_VO2_BACKFILL)
+    return len(rows)
 
 
 if __name__ == "__main__":

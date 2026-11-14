@@ -42,8 +42,9 @@ def app_env(tmp_path, monkeypatch):
     app.db._conn = None
 
 
-def write(path, records):
-    path.write_text(json.dumps({"records": records}))
+def write(path, records, vo2=None):
+    raw = [{"workout": {"start_time": start, "vo2_max": v}} for start, v in (vo2 or {}).items()]
+    path.write_text(json.dumps({"records": records, "raw": raw}))
 
 
 def counts(db):
@@ -77,3 +78,46 @@ def test_stored_run_is_never_overwritten_and_new_one_is_added(app_env):
     with db.cursor() as cur:
         assert cur.execute("SELECT distance_m FROM runs WHERE id = 1000").fetchone()[0] == 1800
         assert cur.execute("SELECT count(*) FROM runs").fetchone()[0] == 2
+
+
+def test_watch_vo2max_is_ingested_from_raw_workouts(app_env):
+    data, ingest, db = app_env
+    write(data / "workout_detail_a.json", [workout(1000, 1800), workout(5000, 1800)], vo2={1000: 52})
+    ingest.ingest(data)
+    with db.cursor() as cur:
+        assert cur.execute("SELECT id, vo2_max_watch FROM runs ORDER BY id").fetchall() == [(1000, 52), (5000, None)]
+
+
+def test_backfill_fills_only_missing_values(app_env):
+    data, ingest, db = app_env
+    write(data / "workout_detail_a.json", [workout(1000, 1800), workout(5000, 1800)], vo2={1000: 52})
+    ingest.ingest(data)
+    write(data / "workout_detail_b.json", [], vo2={1000: 40, 5000: 48})
+    assert ingest.backfill_watch_vo2(data) == 1
+    assert db.is_done(ingest.WATCH_VO2_BACKFILL)
+    with db.cursor() as cur:
+        assert cur.execute("SELECT id, vo2_max_watch FROM runs ORDER BY id").fetchall() == [(1000, 52), (5000, 48)]
+
+
+def test_existing_database_gets_the_column(tmp_path, monkeypatch):
+    import duckdb
+
+    path = tmp_path / "old.duckdb"
+    old = duckdb.connect(str(path))
+    old.execute("CREATE TABLE runs (id BIGINT PRIMARY KEY, start_utc TIMESTAMP NOT NULL)")
+    old.close()
+    monkeypatch.setenv("DB_PATH", str(path))
+    import app.config
+    import app.db
+
+    importlib.reload(app.config)
+    importlib.reload(app.db)
+    try:
+        app.db.connection()
+        assert not app.db.is_done("backfill:vo2_max_watch")
+        with app.db.cursor() as cur:
+            cols = [r[0] for r in cur.execute("DESCRIBE runs").fetchall()]
+        assert "vo2_max_watch" in cols
+    finally:
+        app.db._conn.close()
+        app.db._conn = None

@@ -12,6 +12,8 @@ export type Run = {
 	total_kcal: number | null;
 	pace_s_per_km: number | null;
 	avg_cadence_spm: number | null;
+	vo2_max_watch: number | null; // ml/kg/min, as the watch reported it after the run
+	vo2max_est: number | null; // ml/kg/min, estimated from pace and HR (continuous runs only)
 };
 
 export type WeekStat = {

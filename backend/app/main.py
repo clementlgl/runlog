@@ -10,12 +10,13 @@ from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.concurrency import run_in_threadpool
 
 from .analysis import analyse_runs, ensure_analysed
-from .db import cursor
-from .ingest import ingest
+from .db import cursor, is_done
+from .ingest import WATCH_VO2_BACKFILL, backfill_watch_vo2, ingest
 from .login_job import LoginManager, session_info
 from .sync_job import SyncManager
 from .trophies import best_efforts
 from .trophies import compute as compute_trophies
+from .vo2max import estimate as estimate_vo2max
 
 
 def _rows(sql: str, params: list | None = None) -> list[dict]:
@@ -31,6 +32,8 @@ async def lifespan(_: FastAPI):
         empty = cur.execute("SELECT count(*) FROM runs").fetchone()[0] == 0
     if empty:
         await run_in_threadpool(ingest)
+    if not is_done(WATCH_VO2_BACKFILL):  # runs stored before the watch's VO2max was kept
+        await run_in_threadpool(backfill_watch_vo2)
     await run_in_threadpool(ensure_analysed)
     yield
 
@@ -49,19 +52,34 @@ _RUN_SELECT = """
     SELECT id, a.workout_type, a.label AS workout_label, start_utc + to_seconds(coalesce(utc_offset_s, 0)) AS start_local,
            sport, duration_s, distance_m, avg_hr_bpm, max_hr_bpm, steps, total_kcal,
            CASE WHEN distance_m > 0 THEN round(duration_s / distance_m * 1000) END AS pace_s_per_km,
-           CASE WHEN duration_s > 0 THEN round(steps * 60.0 / duration_s) END AS avg_cadence_spm
+           CASE WHEN duration_s > 0 THEN round(steps * 60.0 / duration_s) END AS avg_cadence_spm,
+           vo2_max_watch,
+           -- HRmax for the VO2max estimate: highest max HR recorded while running.
+           (SELECT max(max_hr_bpm) FROM runs WHERE sport = 'running') AS hr_max_bpm
     FROM runs LEFT JOIN run_analysis a ON a.run_id = runs.id
 """
 
 
+def _run_rows(where: str, params: list) -> list[dict]:
+    rows = _rows(_RUN_SELECT + where, params)
+    for r in rows:
+        hr_max = r.pop("hr_max_bpm")
+        r["vo2max_est"] = (
+            estimate_vo2max(r["distance_m"], r["duration_s"], r["avg_hr_bpm"], hr_max, r["workout_type"])
+            if r["sport"] == "running"
+            else None
+        )
+    return rows
+
+
 @app.get("/api/runs")
 def list_runs(sport: str | None = None) -> list[dict]:
-    return _rows(_RUN_SELECT + " WHERE ($1::VARCHAR IS NULL OR sport = $1) ORDER BY id DESC", [sport])
+    return _run_rows(" WHERE ($1::VARCHAR IS NULL OR sport = $1) ORDER BY id DESC", [sport])
 
 
 @app.get("/api/runs/{run_id}")
 def get_run(run_id: int) -> dict:
-    rows = _rows(_RUN_SELECT + " WHERE id = ?", [run_id])
+    rows = _run_rows(" WHERE id = ?", [run_id])
     if not rows:
         raise HTTPException(404, "run not found")
     return rows[0]

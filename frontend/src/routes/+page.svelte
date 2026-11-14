@@ -3,6 +3,7 @@
 	import { fmtDay, fmtDuration, fmtKm, fmtPace, fmtShortDay, fmtTime } from '#lib/api.js';
 	import RouteGlyph from '#lib/components/RouteGlyph.svelte';
 	import SyncPanel from '#lib/components/SyncPanel.svelte';
+	import Vo2Chart from '#lib/components/Vo2Chart.svelte';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -50,7 +51,13 @@
 				{data.runs.length} sorties et {fmtKm(totalM, 1)} km depuis le {since}
 			</p>
 		</div>
-		<div class="flex gap-2">
+		<div class="flex flex-wrap gap-2">
+			<a
+				href="/entrainement"
+				class="rounded-full border border-rule bg-surface px-4 py-2 text-sm font-medium transition-colors hover:border-ink"
+			>
+				Entraînement
+			</a>
 			<a
 				href="/trophees"
 				class="rounded-full border border-rule bg-surface px-4 py-2 text-sm font-medium transition-colors hover:border-ink"
@@ -151,6 +158,18 @@
 				</span>
 			{/each}
 		</div>
+	</section>
+
+	<section class="mt-14" aria-labelledby="vo2">
+		<h2 id="vo2" class="text-lg font-semibold">VO2max</h2>
+		<p class="mt-1 text-sm text-muted">ml/kg/min, par sortie</p>
+		<div class="mt-4"><Vo2Chart runs={data.runs} /></div>
+		<a
+			href="/entrainement"
+			class="mt-4 inline-block text-sm text-muted hover:text-ink hover:underline"
+		>
+			Quelles sorties pour affiner l'estimation ?
+		</a>
 	</section>
 
 	<section class="mt-14" aria-labelledby="all">

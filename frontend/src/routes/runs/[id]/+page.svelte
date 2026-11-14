@@ -175,6 +175,8 @@
 		return { value: avg, label: `${intervals ? '' : 'Moyenne '}${fmtPace(avg)}/km` };
 	});
 
+	const vo2Fmt = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
+
 	const figures = $derived([
 		{ label: 'Distance', value: fmtKm(run.distance_m), unit: 'km' },
 		{ label: 'Durée', value: fmtDuration(run.duration_s), unit: '' },
@@ -215,6 +217,21 @@
 			</div>
 		{/each}
 	</dl>
+
+	{#if run.vo2_max_watch || run.vo2max_est || intervals}
+		<p class="mt-6 text-sm text-muted">
+			VO2max :
+			<span class="font-medium text-ink">{run.vo2_max_watch ?? '–'}</span> selon la montre,
+			{#if run.vo2max_est}
+				<span class="font-medium text-ink">{vo2Fmt.format(run.vo2max_est)}</span> estimée (allure et FC)
+			{:else if intervals}
+				pas d'estimation pour un fractionné
+			{:else}
+				pas d'estimation pour cette sortie
+			{/if}
+			<span class="text-faint">· ml/kg/min</span>
+		</p>
+	{/if}
 
 	{#if coords.length > 1}
 		<div class="mt-10"><RunMap track={coords} {cursor} {highlights} /></div>

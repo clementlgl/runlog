@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS runs (
     total_kcal    INTEGER,
     avg_hr_bpm    INTEGER,
     max_hr_bpm    INTEGER,
-    steps         INTEGER
+    steps         INTEGER,
+    vo2_max_watch SMALLINT              -- VO2max (ml/kg/min) the watch reported after this run
 );
 CREATE TABLE IF NOT EXISTS samples (
     run_id         BIGINT NOT NULL,
@@ -42,6 +43,11 @@ CREATE TABLE IF NOT EXISTS track (
     lat      DOUBLE NOT NULL,
     lon      DOUBLE NOT NULL
 );
+-- One-off data jobs already done, e.g. backfills after a schema change.
+CREATE TABLE IF NOT EXISTS meta (
+    key   VARCHAR PRIMARY KEY,
+    value VARCHAR
+);
 -- Derived per-run analysis (see analysis.py); recomputed from samples.
 CREATE TABLE IF NOT EXISTS run_analysis (
     run_id        BIGINT PRIMARY KEY,
@@ -55,6 +61,21 @@ _lock = threading.Lock()
 _conn: duckdb.DuckDBPyConnection | None = None
 
 
+def _migrate(conn: duckdb.DuckDBPyConnection) -> None:
+    """Bring a database created by an older version up to ``SCHEMA``."""
+    conn.execute("ALTER TABLE runs ADD COLUMN IF NOT EXISTS vo2_max_watch SMALLINT")
+
+
+def is_done(key: str) -> bool:
+    with cursor() as cur:
+        return cur.execute("SELECT count(*) FROM meta WHERE key = ?", [key]).fetchone()[0] > 0
+
+
+def mark_done(key: str) -> None:
+    with cursor() as cur:
+        cur.execute("INSERT OR REPLACE INTO meta VALUES (?, 'done')", [key])
+
+
 def connection() -> duckdb.DuckDBPyConnection:
     """Process-wide connection; DuckDB allows one writer process per file."""
     global _conn
@@ -63,6 +84,7 @@ def connection() -> duckdb.DuckDBPyConnection:
             DB_PATH.parent.mkdir(parents=True, exist_ok=True)
             _conn = duckdb.connect(str(DB_PATH))
             _conn.execute(SCHEMA)
+            _migrate(_conn)
         return _conn
 
 
