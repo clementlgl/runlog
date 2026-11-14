@@ -4,13 +4,24 @@
 	import 'maplibre-gl/dist/maplibre-gl.css';
 	import type { Map as MapType, Marker } from 'maplibre-gl';
 	import { onSchemeChange, prefersDark, readPalette } from '#lib/theme.js';
+	import { SPEED_COLORS } from '#lib/trackSpeed.js';
 
 	type Props = {
 		track: [number, number][];
 		cursor?: [number, number] | null;
 		highlights?: [number, number][][]; // e.g. interval reps; the rest of the track is muted
+		speeds?: (number | null)[]; // m/s at each track point, for colouring by speed
+		speedRange?: [number, number] | null; // m/s mapped to the slow and fast ends of the scale
+		bySpeed?: boolean; // colour the track by speed instead of the plain route
 	};
-	let { track, cursor = null, highlights = [] }: Props = $props();
+	let {
+		track,
+		cursor = null,
+		highlights = [],
+		speeds = [],
+		speedRange = null,
+		bySpeed = false
+	}: Props = $props();
 
 	let el: HTMLDivElement;
 	let map: MapType | undefined;
@@ -18,6 +29,30 @@
 
 	const styleUrl = () =>
 		`https://tiles.openfreemap.org/styles/${prefersDark() ? 'dark' : 'positron'}`;
+
+	// One two-point segment per stretch of track, carrying its average speed.
+	function speedSegments() {
+		const features = [];
+		for (let i = 1; i < track.length; i++) {
+			const a = speeds[i - 1];
+			const b = speeds[i];
+			if (a == null || b == null) continue;
+			features.push({
+				type: 'Feature' as const,
+				properties: { v: (a + b) / 2 },
+				geometry: { type: 'LineString' as const, coordinates: [track[i - 1], track[i]] }
+			});
+		}
+		return { type: 'FeatureCollection' as const, features };
+	}
+
+	function applyMode(m: MapType) {
+		const speed = bySpeed && !!speedRange;
+		const vis = (on: boolean) => (on ? 'visible' : 'none');
+		for (const id of ['track', 'highlights'])
+			if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', vis(!speed));
+		if (m.getLayer('track-speed')) m.setLayoutProperty('track-speed', 'visibility', vis(speed));
+	}
 
 	function addTrack(m: MapType) {
 		const c = readPalette();
@@ -65,6 +100,31 @@
 				paint: { 'line-color': c.route, 'line-width': 4 }
 			});
 		}
+		if (speedRange) {
+			const [lo, hi] = speedRange;
+			if (!m.getSource('speed')) m.addSource('speed', { type: 'geojson', data: speedSegments() });
+			m.addLayer({
+				id: 'track-speed',
+				type: 'line',
+				source: 'speed',
+				layout,
+				paint: {
+					'line-width': 4,
+					'line-color': [
+						'interpolate',
+						['linear'],
+						['get', 'v'],
+						lo,
+						SPEED_COLORS[0],
+						(lo + hi) / 2,
+						SPEED_COLORS[1],
+						hi,
+						SPEED_COLORS[2]
+					]
+				}
+			});
+		}
+		applyMode(m);
 	}
 
 	const pin = (label: string, title: string) => {
@@ -113,6 +173,11 @@
 			off();
 			map?.remove();
 		};
+	});
+
+	$effect(() => {
+		void bySpeed; // re-run when the mode changes
+		if (map?.isStyleLoaded()) applyMode(map);
 	});
 
 	$effect(() => {

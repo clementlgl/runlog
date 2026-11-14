@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { fmtDay, fmtDuration, fmtKm, fmtPace, fmtTime } from '#lib/api.js';
 	import RunMap from '#lib/components/RunMap.svelte';
+	import { SPEED_COLORS, speedRange, speedsAt } from '#lib/trackSpeed.js';
 	import SeriesChart from '#lib/components/SeriesChart.svelte';
 	import type { PageProps } from './$types';
 
@@ -84,6 +85,16 @@
 		new Map(data.track.map((p) => [p[2], [p[0], p[1]] as [number, number]]))
 	);
 	const coords = $derived(data.track.map((p) => [p[0], p[1]] as [number, number]));
+	// Track coloured by speed: where the run speeds up and slows down.
+	let bySpeed = $state(false);
+	const trackSpeeds = $derived(
+		speedsAt(
+			data.samples,
+			data.track.map((p) => p[2])
+		)
+	);
+	const trackSpeedRange = $derived(speedRange(trackSpeeds));
+	const paceOf = (mps: number) => fmtPace(1000 / mps);
 	let hoverIdx = $state<number | null>(null);
 	const cursor = $derived.by(() => {
 		if (hoverIdx == null) return null;
@@ -234,7 +245,50 @@
 	{/if}
 
 	{#if coords.length > 1}
-		<div class="mt-10"><RunMap track={coords} {cursor} {highlights} /></div>
+		{#if trackSpeedRange}
+			<div class="mt-10 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+				<div
+					class="flex rounded-full border border-rule bg-surface p-0.5 text-sm"
+					role="group"
+					aria-label="Couleur de la trace"
+				>
+					<button
+						class="rounded-full px-3 py-1 font-medium {!bySpeed
+							? 'bg-ink text-surface'
+							: 'text-muted hover:text-ink'}"
+						aria-pressed={!bySpeed}
+						onclick={() => (bySpeed = false)}>Parcours</button
+					>
+					<button
+						class="rounded-full px-3 py-1 font-medium {bySpeed
+							? 'bg-ink text-surface'
+							: 'text-muted hover:text-ink'}"
+						aria-pressed={bySpeed}
+						onclick={() => (bySpeed = true)}>Allure</button
+					>
+				</div>
+				{#if bySpeed}
+					<div class="flex items-center gap-2 text-xs text-muted">
+						<span>Lent {paceOf(trackSpeedRange[0])}/km</span>
+						<span
+							class="h-2 w-28 rounded-full"
+							style="background: linear-gradient(to right, {SPEED_COLORS.join(', ')})"
+						></span>
+						<span>Rapide {paceOf(trackSpeedRange[1])}/km</span>
+					</div>
+				{/if}
+			</div>
+		{/if}
+		<div class={trackSpeedRange ? 'mt-3' : 'mt-10'}>
+			<RunMap
+				track={coords}
+				{cursor}
+				{highlights}
+				speeds={trackSpeeds}
+				speedRange={trackSpeedRange}
+				{bySpeed}
+			/>
+		</div>
 	{/if}
 
 	<section
