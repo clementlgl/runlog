@@ -77,11 +77,11 @@ export type Analysis = {
 	};
 };
 
-export type TrophyTier = 'bronze' | 'argent' | 'or' | 'platine';
+export type TrophyTier = 'bronze' | 'argent' | 'or' | 'platine' | 'record';
 
 export type Trophy = {
 	id: string;
-	family: 'distance' | 'volume' | 'month';
+	family: 'distance' | 'volume' | 'month' | 'record' | 'chrono';
 	tier: TrophyTier;
 	title: string;
 	description: string;
@@ -91,6 +91,9 @@ export type Trophy = {
 	unlocked_at: string | null;
 	run_id: number | null;
 	times?: number; // 'month' only: months that reached the target
+	time_s?: number | null; // 'record' / 'chrono': best time over target_m
+	target_s?: number; // 'chrono' only: time to beat
+	history?: { run_id: number; at: string; time_s: number }[]; // 'record' only, oldest first
 };
 
 const nf = (digits: number) =>
@@ -115,7 +118,11 @@ export const fmtPace = (s: number | null | undefined) =>
 	s ? `${Math.floor(s / 60)}'${String(Math.round(s % 60)).padStart(2, '0')}` : '–';
 
 const dayFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-const shortFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+const shortFmt = new Intl.DateTimeFormat('fr-FR', {
+	weekday: 'short',
+	day: 'numeric',
+	month: 'short'
+});
 const timeFmt = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' });
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 

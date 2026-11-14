@@ -17,6 +17,7 @@
 	--argent: #8e9aa3;
 	--or: #d4a017;
 	--platine: #5f8f9a;
+	--record: var(--route);
 	color-scheme: light;
 }
 

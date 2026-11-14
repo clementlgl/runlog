@@ -14,7 +14,7 @@ from .analysis import analyse_runs, ensure_analysed
 from .ingest import ingest
 from .login_job import LoginManager, session_info
 from .sync_job import SyncManager
-from .trophies import compute as compute_trophies
+from .trophies import best_efforts, compute as compute_trophies
 
 
 def _rows(sql: str, params: list | None = None) -> list[dict]:
@@ -165,13 +165,30 @@ def weekly_stats() -> list[dict]:
 
 @app.get("/api/trophies")
 def trophies() -> list[dict]:
-    """Distance and volume trophies, unlocked or with their progress."""
-    return compute_trophies(
-        _rows(
-            """SELECT id, start_utc + to_seconds(coalesce(utc_offset_s, 0)) AS start_local, distance_m
-               FROM runs WHERE sport = 'running'"""
-        )
+    """Distance, volume and record trophies, unlocked or with their progress."""
+    runs = _rows(
+        """SELECT id, start_utc + to_seconds(coalesce(utc_offset_s, 0)) AS start_local, distance_m
+           FROM runs WHERE sport = 'running'"""
     )
+    # A run's samples never change once ingested: compute its best efforts once.
+    missing = [r["id"] for r in runs if r["id"] not in _efforts_cache]
+    if missing:
+        with cursor() as cur:
+            rows = cur.execute(
+                """SELECT run_id, t_s, distance_m FROM samples
+                   WHERE run_id IN (SELECT unnest(?::BIGINT[])) AND distance_m IS NOT NULL
+                   ORDER BY run_id, t_s""",
+                [missing],
+            ).fetchall()
+        by_run: dict[int, list[tuple[int, float]]] = {rid: [] for rid in missing}
+        for rid, t_s, d in rows:
+            by_run[rid].append((t_s, d))
+        for rid, samples in by_run.items():
+            _efforts_cache[rid] = best_efforts(samples)
+    return compute_trophies(runs, _efforts_cache)
+
+
+_efforts_cache: dict[int, dict[float, int]] = {}
 
 
 @app.post("/api/ingest")
