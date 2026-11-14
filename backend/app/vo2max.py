@@ -1,10 +1,12 @@
-"""VO2max estimated from one run: pace and heart rate only (Runalyze's "effective VO2max").
+"""Physiological VO2max estimated from one run: pace and heart rate only.
 
-The oxygen cost of the run's average speed (Jack Daniels' formula) is divided by
-the share of VO2max it took, inferred from the average heart rate as a share of
-HRmax. Only HRmax is needed (no resting HR, weight or age), but the estimate
-assumes steady effort on flat ground: interval sessions, with their walked or
-jogged recoveries, are left out, and hills or heat push it down.
+The oxygen uptake at the run's average speed (ACSM running equation, from
+treadmill gas measurements) is divided by the share of VO2max it took, inferred
+from the average heart rate as a share of HRmax. This targets VO2max itself, not
+a performance index such as Jack Daniels' VDOT. Only HRmax is needed (no resting
+HR, weight or age), but the estimate assumes an average running economy and
+steady effort on flat ground: interval sessions, with their walked or jogged
+recoveries, are left out, and hills or heat push it down.
 """
 
 from __future__ import annotations
@@ -15,9 +17,9 @@ MIN_DISTANCE_M = 2_000
 
 
 def oxygen_cost(speed_m_per_min: float) -> float:
-    """ml/kg/min needed to run at this speed (Daniels & Gilbert)."""
-    v = speed_m_per_min
-    return -4.60 + 0.182258 * v + 0.000104 * v * v
+    """ml/kg/min taken up running on the flat at this speed (ACSM equation:
+    3.5 at rest plus 0.2 per m/min)."""
+    return 3.5 + 0.2 * speed_m_per_min
 
 
 def vo2max_share(hr: float, hr_max: float) -> float:

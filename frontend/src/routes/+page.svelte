@@ -39,6 +39,9 @@
 			.replace('.', '');
 
 	let syncOpen = $state(false);
+	let vo2HelpOpen = $state(false);
+	// Highest HR recorded while running: the HRmax the VO2max estimate uses.
+	const hrMax = $derived(Math.max(0, ...data.runs.map((r) => r.max_hr_bpm ?? 0)));
 </script>
 
 <svelte:head><title>Runlog</title></svelte:head>
@@ -161,15 +164,41 @@
 	</section>
 
 	<section class="mt-14" aria-labelledby="vo2">
-		<h2 id="vo2" class="text-lg font-semibold">VO2max</h2>
+		<h2 id="vo2" class="flex items-center gap-2 text-lg font-semibold">
+			VO2max
+			<button
+				class="grid size-5 place-items-center rounded-full border border-rule text-xs font-semibold text-muted transition-colors hover:border-ink hover:text-ink"
+				aria-label="Comment la VO2max est calculée"
+				aria-expanded={vo2HelpOpen}
+				aria-controls="vo2-help"
+				onclick={() => (vo2HelpOpen = !vo2HelpOpen)}
+			>
+				?
+			</button>
+		</h2>
 		<p class="mt-1 text-sm text-muted">ml/kg/min, par sortie</p>
+		{#if vo2HelpOpen}
+			<div id="vo2-help" class="mt-4 space-y-3 rounded-xl bg-surface p-5 text-sm text-muted">
+				<p>
+					<span class="font-medium text-ink">Montre :</span> valeur calculée par la montre après chaque
+					sortie. L'algorithme de Xiaomi n'est pas publié (probablement Firstbeat) : il analyse les passages
+					réguliers de la sortie, tient compte de ton profil et lisse la valeur dans le temps, d'où une
+					courbe stable.
+				</p>
+				<p>
+					<span class="font-medium text-ink">Estimée :</span> calculée par Runlog sur chaque sortie
+					continue. La consommation d'oxygène à l'allure moyenne vient de l'équation de course de
+					l'ACSM (3,5 + 0,2 × vitesse en m/min). Elle est divisée par la part de la VO2max utilisée,
+					déduite de la FC moyenne rapportée à ta FC max enregistrée ({hrMax} bpm).
+				</p>
+				<p>
+					Fractionnés et sorties de moins de 15 min ou 2 km ne sont pas estimés. Les côtes, la
+					chaleur et la dérive cardiaque sur les sorties longues font baisser l'estimation ; une FC
+					max réelle au-dessus de {hrMax} la ferait remonter.
+				</p>
+			</div>
+		{/if}
 		<div class="mt-4"><Vo2Chart runs={data.runs} /></div>
-		<a
-			href="/entrainement"
-			class="mt-4 inline-block text-sm text-muted hover:text-ink hover:underline"
-		>
-			Quelles sorties pour affiner l'estimation ?
-		</a>
 	</section>
 
 	<section class="mt-14" aria-labelledby="all">

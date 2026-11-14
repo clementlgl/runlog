@@ -26,7 +26,7 @@
 				'Sprint sur les 500 derniers mètres pour atteindre ta vraie FC max.',
 				'Seulement en forme et sans souci cardiaque connu.'
 			],
-			why: `Donne une performance de référence et mesure ta FC max : si elle dépasse ${data.hrMax}, les estimations remontent.`
+			why: `Mesure ta vraie FC max, qui entre dans chaque estimation : si elle dépasse ${data.hrMax}, toutes remontent. Proche de ta FC max, la sortie donne aussi une estimation fiable.`
 		}
 	]);
 </script>
