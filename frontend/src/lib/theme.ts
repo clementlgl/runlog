@@ -13,7 +13,15 @@ export type Palette = {
 export function readPalette(): Palette {
 	const css = getComputedStyle(document.documentElement);
 	const v = (name: string) => css.getPropertyValue(`--${name}`).trim();
-	return { route: v('route'), routeSoft: v('route-soft'), ink: v('ink'), muted: v('muted'), faint: v('faint'), rule: v('rule'), surface: v('surface') };
+	return {
+		route: v('route'),
+		routeSoft: v('route-soft'),
+		ink: v('ink'),
+		muted: v('muted'),
+		faint: v('faint'),
+		rule: v('rule'),
+		surface: v('surface')
+	};
 }
 
 export const prefersDark = () => matchMedia('(prefers-color-scheme: dark)').matches;

@@ -37,7 +37,10 @@
 
 	let el: HTMLDivElement;
 	let readout = $state<string>('');
-	const kmFmt = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+	const kmFmt = new Intl.NumberFormat('fr-FR', {
+		maximumFractionDigits: 2,
+		minimumFractionDigits: 2
+	});
 
 	onMount(() => {
 		let plot: uPlotType | undefined;
@@ -70,7 +73,12 @@
 					scales: { x: { time: false } },
 					axes: [
 						{ ...axis, values: (_, v) => v.map((n) => `${n} km`) },
-						{ ...axis, size: 52, ...(incrs ? { incrs } : {}), values: (_, v) => v.map((n) => format(sign * n)) }
+						{
+							...axis,
+							size: 52,
+							...(incrs ? { incrs } : {}),
+							values: (_, v) => v.map((n) => format(sign * n))
+						}
 					],
 					series: [{}, { label: title, stroke: c.route, width: 2, points: { show: false } }],
 					hooks: {

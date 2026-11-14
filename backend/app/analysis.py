@@ -11,9 +11,7 @@ from .intervals import analyse
 ANALYSIS_VERSION = 3  # bump to force recomputation after an algorithm change
 
 
-def analyse_runs(
-    run_ids: list[int] | None = None, on_progress: Callable[[int, int], None] | None = None
-) -> dict:
+def analyse_runs(run_ids: list[int] | None = None, on_progress: Callable[[int, int], None] | None = None) -> dict:
     """(Re)analyse ``run_ids`` (all running sessions when ``None``).
     ``on_progress(done, total)`` is called after each run."""
     with cursor() as cur:

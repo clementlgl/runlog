@@ -1,8 +1,11 @@
 <script lang="ts">
 	import type { TrophyTier } from '#lib/api.js';
 
-	let { tier, unlocked, class: klass = '' }: { tier: TrophyTier; unlocked: boolean; class?: string } =
-		$props();
+	let {
+		tier,
+		unlocked,
+		class: klass = ''
+	}: { tier: TrophyTier; unlocked: boolean; class?: string } = $props();
 </script>
 
 <!-- Ribbon + disc; locked medals are drawn as an outline in the rule colour. -->
@@ -21,5 +24,13 @@
 		stroke="var(--medal)"
 		stroke-width="2"
 	/>
-	<circle cx="20" cy="31" r="9.5" fill="none" stroke={unlocked ? 'var(--surface)' : 'var(--rule)'} stroke-width="1.5" opacity="0.6" />
+	<circle
+		cx="20"
+		cy="31"
+		r="9.5"
+		fill="none"
+		stroke={unlocked ? 'var(--surface)' : 'var(--rule)'}
+		stroke-width="1.5"
+		opacity="0.6"
+	/>
 </svg>

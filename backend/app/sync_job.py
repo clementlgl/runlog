@@ -44,9 +44,7 @@ class JobState:
     end: str
     status: str = "running"  # running | done | error
     phase: str = "fetch"  # fetch | import | analyse | done
-    steps: dict[str, Step] = field(
-        default_factory=lambda: {"fetch": Step(), "import": Step(), "analyse": Step()}
-    )
+    steps: dict[str, Step] = field(default_factory=lambda: {"fetch": Step(), "import": Step(), "analyse": Step()})
     records: int = 0  # workouts fetched so far
     result: dict | None = None
     error: str | None = None
@@ -70,9 +68,18 @@ def fetch_command(start: date, end: date, out: Path) -> list[str]:
     """mifit command (through the v7 patch). A ``.partial`` left by an interrupted
     fetch of the same range (e.g. a container restart) is resumed, not redone."""
     cmd = [
-        sys.executable, "-I", str(BACKEND_DIR / "mifit_patch.py"),
-        "export", "workout_detail", "--from", str(start), "--to", str(end),
-        "--long", "--json", str(out),
+        sys.executable,
+        "-I",
+        str(BACKEND_DIR / "mifit_patch.py"),
+        "export",
+        "workout_detail",
+        "--from",
+        str(start),
+        "--to",
+        str(end),
+        "--long",
+        "--json",
+        str(out),
     ]
     if Path(f"{out}.partial").exists():
         cmd.append("--resume")

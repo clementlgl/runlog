@@ -9,12 +9,13 @@ from datetime import date, timedelta
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.concurrency import run_in_threadpool
 
-from .db import cursor
 from .analysis import analyse_runs, ensure_analysed
+from .db import cursor
 from .ingest import ingest
 from .login_job import LoginManager, session_info
 from .sync_job import SyncManager
-from .trophies import best_efforts, compute as compute_trophies
+from .trophies import best_efforts
+from .trophies import compute as compute_trophies
 
 
 def _rows(sql: str, params: list | None = None) -> list[dict]:
@@ -79,9 +80,7 @@ def run_samples(run_id: int) -> list[dict]:
 def run_track(run_id: int) -> list[list[float]]:
     """``[lon, lat, t_s]`` points; ``t_s`` aligns with ``/samples``."""
     with cursor() as cur:
-        res = cur.execute(
-            "SELECT lon, lat, epoch_s - run_id FROM track WHERE run_id = ? ORDER BY epoch_s", [run_id]
-        )
+        res = cur.execute("SELECT lon, lat, epoch_s - run_id FROM track WHERE run_id = ? ORDER BY epoch_s", [run_id])
         return [list(r) for r in res.fetchall()]
 
 

@@ -16,18 +16,29 @@
 	let map: MapType | undefined;
 	let marker: Marker | undefined;
 
-	const styleUrl = () => `https://tiles.openfreemap.org/styles/${prefersDark() ? 'dark' : 'positron'}`;
+	const styleUrl = () =>
+		`https://tiles.openfreemap.org/styles/${prefersDark() ? 'dark' : 'positron'}`;
 
 	function addTrack(m: MapType) {
 		const c = readPalette();
 		if (!m.getSource('track'))
 			m.addSource('track', {
 				type: 'geojson',
-				data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: track } }
+				data: {
+					type: 'Feature',
+					properties: {},
+					geometry: { type: 'LineString', coordinates: track }
+				}
 			});
 		const layout = { 'line-join': 'round', 'line-cap': 'round' } as const;
 		// Surface-coloured casing keeps the route legible over busy tiles.
-		m.addLayer({ id: 'track-casing', type: 'line', source: 'track', layout, paint: { 'line-color': c.surface, 'line-width': 7 } });
+		m.addLayer({
+			id: 'track-casing',
+			type: 'line',
+			source: 'track',
+			layout,
+			paint: { 'line-color': c.surface, 'line-width': 7 }
+		});
 		const hl = highlights.length > 0;
 		m.addLayer({
 			id: 'track',
@@ -40,9 +51,19 @@
 			if (!m.getSource('highlights'))
 				m.addSource('highlights', {
 					type: 'geojson',
-					data: { type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates: highlights } }
+					data: {
+						type: 'Feature',
+						properties: {},
+						geometry: { type: 'MultiLineString', coordinates: highlights }
+					}
 				});
-			m.addLayer({ id: 'highlights', type: 'line', source: 'highlights', layout, paint: { 'line-color': c.route, 'line-width': 4 } });
+			m.addLayer({
+				id: 'highlights',
+				type: 'line',
+				source: 'highlights',
+				layout,
+				paint: { 'line-color': c.route, 'line-width': 4 }
+			});
 		}
 	}
 
@@ -80,7 +101,9 @@
 			map.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');
 			map.on('style.load', () => addTrack(map!));
 			new maplibre.Marker({ element: pin('D', 'Départ') }).setLngLat(track[0]).addTo(map);
-			new maplibre.Marker({ element: pin('A', 'Arrivée') }).setLngLat(track[track.length - 1]).addTo(map);
+			new maplibre.Marker({ element: pin('A', 'Arrivée') })
+				.setLngLat(track[track.length - 1])
+				.addTo(map);
 			const c = document.createElement('div');
 			c.className = 'size-4 rounded-full border-2 border-surface bg-route';
 			marker = new maplibre.Marker({ element: c });

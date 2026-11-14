@@ -95,19 +95,25 @@
 				<dl class="mt-6 grid grid-cols-2 gap-x-8 gap-y-5 sm:flex sm:flex-wrap sm:gap-x-10">
 					<div>
 						<dt class="text-sm text-muted">Distance</dt>
-						<dd class="figure mt-1 text-figure">{fmtKm(latest.distance_m)}<span class="ml-1 text-lg text-muted">km</span></dd>
+						<dd class="mt-1 figure text-figure">
+							{fmtKm(latest.distance_m)}<span class="ml-1 text-lg text-muted">km</span>
+						</dd>
 					</div>
 					<div>
 						<dt class="text-sm text-muted">Durée</dt>
-						<dd class="figure mt-1 text-figure">{fmtDuration(latest.duration_s)}</dd>
+						<dd class="mt-1 figure text-figure">{fmtDuration(latest.duration_s)}</dd>
 					</div>
 					<div>
 						<dt class="text-sm text-muted">Allure</dt>
-						<dd class="figure mt-1 text-figure">{fmtPace(latest.pace_s_per_km)}<span class="ml-1 text-lg text-muted">/km</span></dd>
+						<dd class="mt-1 figure text-figure">
+							{fmtPace(latest.pace_s_per_km)}<span class="ml-1 text-lg text-muted">/km</span>
+						</dd>
 					</div>
 					<div>
 						<dt class="text-sm text-muted">FC moyenne</dt>
-						<dd class="figure mt-1 text-figure">{latest.avg_hr_bpm ?? '–'}<span class="ml-1 text-lg text-muted">bpm</span></dd>
+						<dd class="mt-1 figure text-figure">
+							{latest.avg_hr_bpm ?? '–'}<span class="ml-1 text-lg text-muted">bpm</span>
+						</dd>
 					</div>
 				</dl>
 			</div>
@@ -121,13 +127,18 @@
 				{@const last = i === weeks.length - 1}
 				<div
 					class="group flex h-full flex-1 flex-col items-center justify-end gap-1.5"
-					title="Semaine du {weekLabel(w.week)} : {fmtKm(w.km * 1000, 1)} km en {w.runs} sortie{w.runs > 1 ? 's' : ''}"
+					title="Semaine du {weekLabel(w.week)} : {fmtKm(
+						w.km * 1000,
+						1
+					)} km en {w.runs} sortie{w.runs > 1 ? 's' : ''}"
 				>
 					<span class="text-xs {last ? 'font-semibold text-ink' : 'text-muted'}">
 						{w.km ? Math.round(w.km) : ''}
 					</span>
 					<div
-						class="w-full max-w-12 rounded-t-[4px] {last ? 'bg-route' : 'bg-route/35 group-hover:bg-route/60'}"
+						class="w-full max-w-12 rounded-t-[4px] {last
+							? 'bg-route'
+							: 'bg-route/35 group-hover:bg-route/60'}"
 						style="height: {(w.km / maxKm) * 100}%; min-height: {w.km ? 2 : 0}px"
 					></div>
 				</div>
@@ -156,7 +167,9 @@
 							<span class="font-medium">{fmtShortDay(r.start_local)}</span>
 							<span class="ml-2 text-sm text-faint">{fmtTime(r.start_local)}</span>
 							{#if r.workout_type === 'intervals'}
-								<span class="ml-2 rounded-full bg-route-soft px-2 py-0.5 text-xs font-medium whitespace-nowrap text-ink">
+								<span
+									class="ml-2 rounded-full bg-route-soft px-2 py-0.5 text-xs font-medium whitespace-nowrap text-ink"
+								>
 									Fractionné {r.workout_label}
 								</span>
 							{/if}
@@ -166,8 +179,12 @@
 							<span class="text-sm text-muted">km</span>
 						</span>
 						<span class="hidden text-right text-muted sm:block">{fmtDuration(r.duration_s)}</span>
-						<span class="hidden text-right sm:block">{fmtPace(r.pace_s_per_km)}<span class="ml-0.5 text-sm text-muted">/km</span></span>
-						<span class="hidden text-right text-muted sm:block">{r.avg_hr_bpm ?? '–'}<span class="ml-1 text-xs">bpm</span></span>
+						<span class="hidden text-right sm:block"
+							>{fmtPace(r.pace_s_per_km)}<span class="ml-0.5 text-sm text-muted">/km</span></span
+						>
+						<span class="hidden text-right text-muted sm:block"
+							>{r.avg_hr_bpm ?? '–'}<span class="ml-1 text-xs">bpm</span></span
+						>
 					</a>
 				</li>
 			{:else}

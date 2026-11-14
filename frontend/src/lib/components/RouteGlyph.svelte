@@ -1,7 +1,12 @@
 <script lang="ts">
 	// A run's GPS shape as a single stroke, fitted into a square. Purely decorative
 	// next to the data it accompanies, so hidden from assistive tech.
-	type Props = { points: [number, number][] | undefined; size?: number; stroke?: number; class?: string };
+	type Props = {
+		points: [number, number][] | undefined;
+		size?: number;
+		stroke?: number;
+		class?: string;
+	};
 	let { points, size = 40, stroke = 1.75, class: cls = '' }: Props = $props();
 
 	const d = $derived.by(() => {
@@ -18,7 +23,10 @@
 		const ox = pad + (size - 2 * pad - (x1 - x0) * k) / 2;
 		const oy = pad + (size - 2 * pad - (y1 - y0) * k) / 2;
 		return xy
-			.map(([x, y], i) => `${i ? 'L' : 'M'}${(ox + (x - x0) * k).toFixed(1)} ${(oy + (y - y0) * k).toFixed(1)}`)
+			.map(
+				([x, y], i) =>
+					`${i ? 'L' : 'M'}${(ox + (x - x0) * k).toFixed(1)} ${(oy + (y - y0) * k).toFixed(1)}`
+			)
 			.join('');
 	});
 </script>

@@ -27,3 +27,17 @@ dev = [
     "httpx (>=0.28.1,<0.29.0)",
     "pytest (>=9.2.0,<10.0.0)"
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501"]  # ruff format handles length; long SQL strings stay readable
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Query"]

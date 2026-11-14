@@ -17,7 +17,9 @@
 	// Presets are fixed when the panel opens: the latest run doesn't move while it is open.
 	const last = untrack(() => lastRun);
 	const presets: Preset[] = [
-		...(last ? [{ id: 'last', label: 'Depuis la dernière sortie', from: () => last.slice(0, 10) }] : []),
+		...(last
+			? [{ id: 'last', label: 'Depuis la dernière sortie', from: () => last.slice(0, 10) }]
+			: []),
 		{ id: '30', label: '30 jours', from: () => daysAgo(30) },
 		{ id: '90', label: '3 mois', from: () => daysAgo(90) },
 		{ id: '365', label: '1 an', from: () => daysAgo(365) }
@@ -42,7 +44,11 @@
 					: ''
 	);
 
-	const longFmt = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+	const longFmt = new Intl.DateTimeFormat('fr-FR', {
+		day: 'numeric',
+		month: 'long',
+		year: 'numeric'
+	});
 	const fmt = (d: string) => longFmt.format(new Date(d + 'T12:00:00'));
 
 	function pick(p: Preset) {
@@ -51,7 +57,12 @@
 		to = today;
 	}
 
-	type Step = { status: 'pending' | 'running' | 'done' | 'error'; done: number | null; total: number | null; detail: string | null };
+	type Step = {
+		status: 'pending' | 'running' | 'done' | 'error';
+		done: number | null;
+		total: number | null;
+		detail: string | null;
+	};
 	type Job = {
 		id: string;
 		start: string;
@@ -148,7 +159,11 @@
 		if (s.status === 'pending') return 'En attente';
 		if (s.status === 'error') return 'Échec';
 		if (key === 'fetch') {
-			const chunks = s.total ? `bloc ${s.done ?? 0} sur ${s.total}` : s.status === 'running' ? 'en cours' : '';
+			const chunks = s.total
+				? `bloc ${s.done ?? 0} sur ${s.total}`
+				: s.status === 'running'
+					? 'en cours'
+					: '';
 			return [chunks, s.detail].filter(Boolean).join(', ') || 'Terminé';
 		}
 		if (key === 'analyse' && s.total) return `${s.done ?? 0} sur ${s.total}`;
@@ -161,7 +176,8 @@
 	<XiaomiAccount />
 	<h2 id="sync-title" class="mt-5 font-semibold">Récupérer mes sorties</h2>
 	<p class="mt-1 text-sm text-muted">
-		Seules les sorties absentes de l'application sont ajoutées. Une longue période peut prendre plusieurs minutes.
+		Seules les sorties absentes de l'application sont ajoutées. Une longue période peut prendre
+		plusieurs minutes.
 	</p>
 
 	<div class="mt-4 flex flex-wrap gap-2" role="group" aria-label="Période prédéfinie">
@@ -243,8 +259,18 @@
 						<span class="text-muted">{stepText(s, st.key)}</span>
 					</div>
 					{#if s.status === 'running' && s.total}
-						<div class="mt-1.5 h-1.5 rounded-full bg-rule/60" role="progressbar" aria-valuemin="0" aria-valuemax={s.total} aria-valuenow={s.done ?? 0} aria-label={st.label}>
-							<div class="h-1.5 rounded-full bg-route transition-[width] duration-500" style="width:{((s.done ?? 0) / s.total) * 100}%"></div>
+						<div
+							class="mt-1.5 h-1.5 rounded-full bg-rule/60"
+							role="progressbar"
+							aria-valuemin="0"
+							aria-valuemax={s.total}
+							aria-valuenow={s.done ?? 0}
+							aria-label={st.label}
+						>
+							<div
+								class="h-1.5 rounded-full bg-route transition-[width] duration-500"
+								style="width:{((s.done ?? 0) / s.total) * 100}%"
+							></div>
 						</div>
 					{/if}
 				</li>
@@ -252,7 +278,15 @@
 		</ol>
 	{/if}
 
-	<p class="mt-3 min-h-5 text-sm {error || failed ? 'text-[#b42318] dark:text-[#f97066]' : 'text-muted'}" role="status" aria-live="polite">
-		{#if error}{error}{:else if syncing && job}Récupération du {fmt(job.start)} au {fmt(job.end)}…{:else}{message}{/if}
+	<p
+		class="mt-3 min-h-5 text-sm {error || failed
+			? 'text-[#b42318] dark:text-[#f97066]'
+			: 'text-muted'}"
+		role="status"
+		aria-live="polite"
+	>
+		{#if error}{error}{:else if syncing && job}Récupération du {fmt(job.start)} au {fmt(
+				job.end
+			)}…{:else}{message}{/if}
 	</p>
 </section>

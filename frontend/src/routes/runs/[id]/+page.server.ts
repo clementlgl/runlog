@@ -12,7 +12,9 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
 		get<TrackPoint[]>(`/api/runs/${params.id}/track`),
 		get<Split[]>(`/api/runs/${params.id}/splits`),
 		get<Run[]>('/api/runs'),
-		fetch(`/api/runs/${params.id}/analysis`).then((r) => (r.ok ? (r.json() as Promise<Analysis>) : null))
+		fetch(`/api/runs/${params.id}/analysis`).then((r) =>
+			r.ok ? (r.json() as Promise<Analysis>) : null
+		)
 	]);
 	// HRmax for zones: highest max HR recorded across all sessions.
 	const hrMax = Math.max(...runs.map((r) => r.max_hr_bpm ?? 0));

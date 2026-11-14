@@ -72,10 +72,7 @@
 		const worst = Math.max(...paces);
 		return rows.map((r, i) => ({
 			...r,
-			label:
-				i === rows.length - 1 && r.distance_m < 995
-					? fmtKm(r.distance_m)
-					: String(r.km),
+			label: i === rows.length - 1 && r.distance_m < 995 ? fmtKm(r.distance_m) : String(r.km),
 			best: r.pace === best,
 			// bar = speed relative to the slowest full split, so faster = longer
 			w: r.pace ? 35 + 65 * ((worst - r.pace) / Math.max(1, worst - best)) : 0
@@ -83,7 +80,9 @@
 	});
 
 	// --- chart hover -> map marker ---
-	const trackByT = $derived(new Map(data.track.map((p) => [p[2], [p[0], p[1]] as [number, number]])));
+	const trackByT = $derived(
+		new Map(data.track.map((p) => [p[2], [p[0], p[1]] as [number, number]]))
+	);
 	const coords = $derived(data.track.map((p) => [p[0], p[1]] as [number, number]));
 	let hoverIdx = $state<number | null>(null);
 	const cursor = $derived.by(() => {
@@ -105,7 +104,9 @@
 	const bands = $derived(work.map((s) => [kmAt(s.t0), kmAt(s.t1 - 1)] as [number, number]));
 	const highlights = $derived(
 		work.map((s) =>
-			data.track.filter((p) => p[2] >= s.t0 && p[2] < s.t1).map((p) => [p[0], p[1]] as [number, number])
+			data.track
+				.filter((p) => p[2] >= s.t0 && p[2] < s.t1)
+				.map((p) => [p[0], p[1]] as [number, number])
 		)
 	);
 	const repRows = $derived.by(() => {
@@ -154,7 +155,10 @@
 			);
 		if (sm.rep_hr_first_bpm && sm.rep_hr_last_bpm) {
 			const drift = Math.round(sm.rep_hr_last_bpm - sm.rep_hr_first_bpm);
-			if (drift > 0) out.push(`La FC moyenne en répétition monte de ${drift} bpm entre la première et la dernière.`);
+			if (drift > 0)
+				out.push(
+					`La FC moyenne en répétition monte de ${drift} bpm entre la première et la dernière.`
+				);
 		}
 		if (sm.recovery_hr_drop_mean_bpm && sm.recovery_duration_mean_s)
 			out.push(
@@ -175,7 +179,11 @@
 		{ label: 'Distance', value: fmtKm(run.distance_m), unit: 'km' },
 		{ label: 'Durée', value: fmtDuration(run.duration_s), unit: '' },
 		intervals
-			? { label: 'Allure en répétition', value: fmtPace(intervals.summary.rep_pace_mean_s_per_km), unit: '/km' }
+			? {
+					label: 'Allure en répétition',
+					value: fmtPace(intervals.summary.rep_pace_mean_s_per_km),
+					unit: '/km'
+				}
 			: { label: 'Allure moyenne', value: fmtPace(run.pace_s_per_km), unit: '/km' },
 		{ label: 'FC moyenne', value: String(run.avg_hr_bpm ?? '–'), unit: 'bpm' },
 		{ label: 'FC max', value: String(run.max_hr_bpm ?? '–'), unit: 'bpm' },
@@ -200,8 +208,9 @@
 		{#each figures as f (f.label)}
 			<div>
 				<dt class="text-sm text-muted">{f.label}</dt>
-				<dd class="figure mt-1 text-[2.25rem] sm:text-figure">
-					{f.value}{#if f.unit}<span class="ml-1 text-base font-medium text-muted">{f.unit}</span>{/if}
+				<dd class="mt-1 figure text-[2.25rem] sm:text-figure">
+					{f.value}{#if f.unit}<span class="ml-1 text-base font-medium text-muted">{f.unit}</span
+						>{/if}
 				</dd>
 			</div>
 		{/each}
@@ -211,7 +220,10 @@
 		<div class="mt-10"><RunMap track={coords} {cursor} {highlights} /></div>
 	{/if}
 
-	<section class="mt-4 space-y-6 rounded-2xl bg-surface p-5 sm:p-6" aria-label="Courbes de la sortie">
+	<section
+		class="mt-4 space-y-6 rounded-2xl bg-surface p-5 sm:p-6"
+		aria-label="Courbes de la sortie"
+	>
 		<SeriesChart
 			title="Allure"
 			unit="/km"
@@ -224,8 +236,22 @@
 			{refLine}
 			onhover={hover}
 		/>
-		<SeriesChart title="Fréquence cardiaque" unit="bpm" x={series.x} y={series.hr} {bands} onhover={hover} />
-		<SeriesChart title="Cadence" unit="pas/min" x={series.x} y={series.cadence} {bands} onhover={hover} />
+		<SeriesChart
+			title="Fréquence cardiaque"
+			unit="bpm"
+			x={series.x}
+			y={series.hr}
+			{bands}
+			onhover={hover}
+		/>
+		<SeriesChart
+			title="Cadence"
+			unit="pas/min"
+			x={series.x}
+			y={series.cadence}
+			{bands}
+			onhover={hover}
+		/>
 		{#if intervals}
 			<p class="flex items-center gap-2 text-sm text-muted">
 				<span class="inline-block h-3 w-5 rounded-[3px] bg-route-soft"></span> Répétitions
@@ -266,7 +292,12 @@
 						{#each repRows as r (r.index)}
 							<tr class="border-t border-rule">
 								<td class="py-2 font-medium">{r.index}</td>
-								<td class="py-2 text-right" title={r.gps_distance_m ? `Mesuré par GPS : ${Math.round(r.gps_distance_m)} m` : undefined}>
+								<td
+									class="py-2 text-right"
+									title={r.gps_distance_m
+										? `Mesuré par GPS : ${Math.round(r.gps_distance_m)} m`
+										: undefined}
+								>
 									{Math.round(r.distance_m)} m
 								</td>
 								<td class="py-2 text-right">{fmtDuration(r.duration_s)}</td>
@@ -277,7 +308,9 @@
 									</div>
 								</td>
 								<td class="py-2 text-right">
-									{r.avg_hr_bpm ? Math.round(r.avg_hr_bpm) : '–'}<span class="text-muted"> / {r.max_hr_bpm ?? '–'}</span>
+									{r.avg_hr_bpm ? Math.round(r.avg_hr_bpm) : '–'}<span class="text-muted">
+										/ {r.max_hr_bpm ?? '–'}</span
+									>
 								</td>
 								<td class="py-2 text-right text-muted">
 									{#if r.rec}{fmtDuration(r.rec.duration_s)}{#if r.hrDrop}, FC −{r.hrDrop}{/if}{/if}
@@ -303,37 +336,39 @@
 
 	<div class="mt-14 grid gap-14 lg:grid-cols-2 lg:gap-12">
 		{#if !intervals}
-		<section aria-labelledby="splits">
-			<h2 id="splits" class="text-lg font-semibold">Kilomètre par kilomètre</h2>
-			<table class="mt-4 w-full">
-				<thead class="text-left text-sm text-muted">
-					<tr>
-						<th class="pb-2 font-normal">km</th>
-						<th class="pb-2 font-normal">Allure</th>
-						<th class="pb-2 text-right font-normal">FC</th>
-						<th class="pb-2 text-right font-normal">Cadence</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each splitRows as s (s.km)}
-						<tr class="border-t border-rule">
-							<td class="w-12 py-2 text-muted">{s.label}</td>
-							<td class="py-2">
-								<div class="flex items-center gap-3">
-									<div class="h-2 rounded-r-[4px] bg-route" style="width:{s.w * 0.6}%"></div>
-									<span class={s.best ? 'font-semibold' : ''}>{fmtPace(s.pace)}</span>
-								</div>
-							</td>
-							<td class="py-2 text-right">{s.avg_hr_bpm ?? '–'}</td>
-							<td class="py-2 text-right text-muted">{s.avg_cadence_spm ?? '–'}</td>
+			<section aria-labelledby="splits">
+				<h2 id="splits" class="text-lg font-semibold">Kilomètre par kilomètre</h2>
+				<table class="mt-4 w-full">
+					<thead class="text-left text-sm text-muted">
+						<tr>
+							<th class="pb-2 font-normal">km</th>
+							<th class="pb-2 font-normal">Allure</th>
+							<th class="pb-2 text-right font-normal">FC</th>
+							<th class="pb-2 text-right font-normal">Cadence</th>
 						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</section>
-
+					</thead>
+					<tbody>
+						{#each splitRows as s (s.km)}
+							<tr class="border-t border-rule">
+								<td class="w-12 py-2 text-muted">{s.label}</td>
+								<td class="py-2">
+									<div class="flex items-center gap-3">
+										<div class="h-2 rounded-r-[4px] bg-route" style="width:{s.w * 0.6}%"></div>
+										<span class={s.best ? 'font-semibold' : ''}>{fmtPace(s.pace)}</span>
+									</div>
+								</td>
+								<td class="py-2 text-right">{s.avg_hr_bpm ?? '–'}</td>
+								<td class="py-2 text-right text-muted">{s.avg_cadence_spm ?? '–'}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</section>
 		{/if}
-		<section aria-labelledby="zones" class={intervals ? 'lg:col-span-2 lg:max-w-[calc(50%-1.5rem)]' : ''}>
+		<section
+			aria-labelledby="zones"
+			class={intervals ? 'lg:col-span-2 lg:max-w-[calc(50%-1.5rem)]' : ''}
+		>
 			<h2 id="zones" class="text-lg font-semibold">Temps par zone cardiaque</h2>
 			<p class="mt-1 text-sm text-muted">Calculé sur ta FC max enregistrée, {data.hrMax} bpm.</p>
 			<ul class="mt-5 space-y-4">
@@ -341,13 +376,13 @@
 					<li>
 						<div class="flex items-baseline justify-between gap-4">
 							<span>{z.name} <span class="text-sm text-faint">dès {z.bpm} bpm</span></span>
-							<span class="text-sm"><span class="font-medium">{fmtDuration(z.s)}</span> <span class="text-muted">({z.pct} %)</span></span>
+							<span class="text-sm"
+								><span class="font-medium">{fmtDuration(z.s)}</span>
+								<span class="text-muted">({z.pct} %)</span></span
+							>
 						</div>
 						<div class="mt-1.5 h-2 w-full rounded-[4px] bg-rule/60">
-							<div
-								class="h-2 rounded-[4px] bg-route"
-								style="width:{z.w}%; opacity:{z.alpha}"
-							></div>
+							<div class="h-2 rounded-[4px] bg-route" style="width:{z.w}%; opacity:{z.alpha}"></div>
 						</div>
 					</li>
 				{/each}

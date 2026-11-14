@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 
+from mifit.errors import NotificationRequiredError
+
 from app import login_job
 from app.login_job import LoginManager
-from mifit.errors import NotificationRequiredError
 
 
 @dataclass

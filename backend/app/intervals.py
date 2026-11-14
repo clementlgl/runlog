@@ -496,9 +496,7 @@ def analyse(samples: list[dict]) -> Analysis:
     fade = (st.mean(paces[-n2:]) / st.mean(paces[:n2]) - 1) * 100 if paces else None
     rep_hr = [s.avg_hr_bpm for s in work if s.avg_hr_bpm]
     hr_drops = [
-        work[k].end_hr_bpm - rec[k].min_hr_bpm
-        for k in range(len(rec))
-        if work[k].end_hr_bpm and rec[k].min_hr_bpm
+        work[k].end_hr_bpm - rec[k].min_hr_bpm for k in range(len(rec)) if work[k].end_hr_bpm and rec[k].min_hr_bpm
     ]
     summary = {
         "reps": len(work),

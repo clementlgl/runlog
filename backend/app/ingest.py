@@ -8,8 +8,8 @@ from pathlib import Path
 
 import polars as pl
 
-from .config import DATA_DIR
 from .analysis import analyse_runs
+from .config import DATA_DIR
 from .db import cursor
 
 _SAMPLE_SCHEMA = {

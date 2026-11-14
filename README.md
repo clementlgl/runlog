@@ -68,3 +68,13 @@ cd backend && poetry install && poetry run uvicorn app.main:app --reload
 ```bash
 cd frontend && pnpm install && pnpm dev
 ```
+
+## Développement
+
+Hooks pre-commit (ruff, Prettier, contrôles de base), après `pnpm install` dans `frontend/` :
+
+```bash
+pre-commit install
+```
+
+La CI (`.github/workflows/ci.yml`) lance pre-commit, les tests backend, `pnpm check`, le build frontend et `docker compose build` sur chaque PR, chaque push sur `main` et à la demande.
