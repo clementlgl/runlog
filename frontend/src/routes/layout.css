@@ -13,6 +13,10 @@
 	--rule: #dee1dd;
 	--route: #2f6fd6;
 	--route-soft: #dbe6f8;
+	--bronze: #b5703a;
+	--argent: #8e9aa3;
+	--or: #d4a017;
+	--platine: #5f8f9a;
 	color-scheme: light;
 }
 
@@ -26,6 +30,10 @@
 		--rule: #2b3034;
 		--route: #5b93ea;
 		--route-soft: #1f3150;
+		--bronze: #c98552;
+		--argent: #a9b4bc;
+		--or: #e0b53a;
+		--platine: #7fb0bb;
 		color-scheme: dark;
 	}
 }

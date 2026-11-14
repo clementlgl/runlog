@@ -14,6 +14,7 @@ from .analysis import analyse_runs, ensure_analysed
 from .ingest import ingest
 from .login_job import LoginManager, session_info
 from .sync_job import SyncManager
+from .trophies import compute as compute_trophies
 
 
 def _rows(sql: str, params: list | None = None) -> list[dict]:
@@ -159,6 +160,17 @@ def weekly_stats() -> list[dict]:
         FROM runs WHERE sport = 'running'
         GROUP BY 1 ORDER BY 1
         """
+    )
+
+
+@app.get("/api/trophies")
+def trophies() -> list[dict]:
+    """Distance and volume trophies, unlocked or with their progress."""
+    return compute_trophies(
+        _rows(
+            """SELECT id, start_utc + to_seconds(coalesce(utc_offset_s, 0)) AS start_local, distance_m
+               FROM runs WHERE sport = 'running'"""
+        )
     )
 
 

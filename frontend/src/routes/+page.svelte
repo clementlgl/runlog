@@ -50,14 +50,22 @@
 				{data.runs.length} sorties et {fmtKm(totalM, 1)} km depuis le {since}
 			</p>
 		</div>
-		<button
-			class="rounded-full border border-rule bg-surface px-4 py-2 text-sm font-medium transition-colors hover:border-ink"
-			aria-expanded={syncOpen}
-			aria-controls="sync-panel"
-			onclick={() => (syncOpen = !syncOpen)}
-		>
-			{syncOpen ? 'Fermer' : 'Synchroniser'}
-		</button>
+		<div class="flex gap-2">
+			<a
+				href="/trophees"
+				class="rounded-full border border-rule bg-surface px-4 py-2 text-sm font-medium transition-colors hover:border-ink"
+			>
+				Trophées
+			</a>
+			<button
+				class="rounded-full border border-rule bg-surface px-4 py-2 text-sm font-medium transition-colors hover:border-ink"
+				aria-expanded={syncOpen}
+				aria-controls="sync-panel"
+				onclick={() => (syncOpen = !syncOpen)}
+			>
+				{syncOpen ? 'Fermer' : 'Synchroniser'}
+			</button>
+		</div>
 	</header>
 
 	{#if syncOpen}

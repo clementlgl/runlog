@@ -77,6 +77,22 @@ export type Analysis = {
 	};
 };
 
+export type TrophyTier = 'bronze' | 'argent' | 'or' | 'platine';
+
+export type Trophy = {
+	id: string;
+	family: 'distance' | 'volume' | 'month';
+	tier: TrophyTier;
+	title: string;
+	description: string;
+	target_m: number;
+	progress_m: number; // best single run, total, or best month (capped at target once unlocked)
+	unlocked: boolean;
+	unlocked_at: string | null;
+	run_id: number | null;
+	times?: number; // 'month' only: months that reached the target
+};
+
 const nf = (digits: number) =>
 	new Intl.NumberFormat('fr-FR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 const nf1 = nf(1);
