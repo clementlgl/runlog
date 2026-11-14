@@ -1,0 +1,7 @@
+# Personal location data (tracks) and large OSM files: never commit
+work/
+*.json
+*.html
+*.osm
+*.pbf
+.venv/

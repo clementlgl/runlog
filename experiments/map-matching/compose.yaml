@@ -1,0 +1,17 @@
+# Local Valhalla for the map-matching test.
+# Put the clipped extract in ./work/custom_files/ first (see README).
+# Tiles are built on first start (~1-2 min for a city), then served on 127.0.0.1:8002.
+name: runlog-valhalla-test
+
+services:
+  valhalla:
+    image: ghcr.io/valhalla/valhalla-scripted:latest
+    ports:
+      - "127.0.0.1:8002:8002"
+    volumes:
+      - ./work/custom_files:/custom_files
+    environment:
+      serve_tiles: "True"
+      build_admins: "False"
+      build_elevation: "False"
+      build_time_zones: "False"
