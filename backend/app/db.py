@@ -55,6 +55,13 @@ CREATE TABLE IF NOT EXISTS run_analysis (
     label         VARCHAR,            -- e.g. '8 × 400 m'
     analysis      JSON NOT NULL
 );
+-- Interval-ladder steps validated (see frontend interval-ladder.json), each by
+-- the session that met its target.
+CREATE TABLE IF NOT EXISTS ladder_validation (
+    step_key  VARCHAR PRIMARY KEY,    -- e.g. '8 × 400 m@285' (label @ target pace in s/km)
+    day       DATE NOT NULL,
+    run_id    BIGINT
+);
 """
 
 _lock = threading.Lock()
@@ -64,6 +71,7 @@ _conn: duckdb.DuckDBPyConnection | None = None
 def _migrate(conn: duckdb.DuckDBPyConnection) -> None:
     """Bring a database created by an older version up to ``SCHEMA``."""
     conn.execute("ALTER TABLE runs ADD COLUMN IF NOT EXISTS vo2_max_watch SMALLINT")
+    conn.execute("ALTER TABLE ladder_validation ADD COLUMN IF NOT EXISTS run_id BIGINT")
 
 
 def is_done(key: str) -> bool:

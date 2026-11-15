@@ -8,6 +8,7 @@ from datetime import date, timedelta
 
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.concurrency import run_in_threadpool
+from pydantic import BaseModel, Field
 
 from .analysis import analyse_runs, ensure_analysed
 from .db import cursor, is_done
@@ -49,7 +50,9 @@ def health() -> dict:
 
 
 _RUN_SELECT = """
-    SELECT id, a.workout_type, a.label AS workout_label, start_utc + to_seconds(coalesce(utc_offset_s, 0)) AS start_local,
+    SELECT id, a.workout_type, a.label AS workout_label,
+           TRY_CAST(json_extract_string(a.analysis, '$.summary.rep_pace_mean_s_per_km') AS DOUBLE) AS rep_pace_s_per_km,
+           start_utc + to_seconds(coalesce(utc_offset_s, 0)) AS start_local,
            sport, duration_s, distance_m, avg_hr_bpm, max_hr_bpm, steps, total_kcal,
            CASE WHEN distance_m > 0 THEN round(duration_s / distance_m * 1000) END AS pace_s_per_km,
            CASE WHEN duration_s > 0 THEN round(steps * 60.0 / duration_s) END AS avg_cadence_spm,
@@ -238,6 +241,36 @@ def sync_range(days: int | None, from_date: date | None, to_date: date | None) -
 def xiaomi_session() -> dict:
     """Is a Xiaomi session stored (and since when)? Never returns its secrets."""
     return session_info()
+
+
+class LadderValidation(BaseModel):
+    step_key: str = Field(min_length=1, max_length=64)
+    day: date
+    run_id: int  # session that met the step's target
+
+
+@app.get("/api/ladder/validations")
+def ladder_validations() -> list[dict]:
+    """Validated interval-ladder steps, oldest first."""
+    return _rows(
+        "SELECT step_key, strftime(day, '%Y-%m-%d') AS day, run_id FROM ladder_validation ORDER BY day, step_key"
+    )
+
+
+@app.post("/api/ladder/validations", status_code=201)
+def validate_ladder_step(v: LadderValidation) -> dict:
+    with cursor() as cur:
+        cur.execute(
+            "INSERT OR REPLACE INTO ladder_validation (step_key, day, run_id) VALUES (?, ?, ?)",
+            [v.step_key, v.day, v.run_id],
+        )
+    return {"step_key": v.step_key, "day": v.day.isoformat(), "run_id": v.run_id}
+
+
+@app.delete("/api/ladder/validations", status_code=204)
+def unvalidate_ladder_step(step_key: str = Query(min_length=1, max_length=64)) -> None:
+    with cursor() as cur:
+        cur.execute("DELETE FROM ladder_validation WHERE step_key = ?", [step_key])
 
 
 @app.post("/api/login", status_code=202)

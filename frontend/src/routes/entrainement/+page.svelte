@@ -1,12 +1,17 @@
 <script lang="ts">
-	import { fmtKm, type Run } from '#lib/api.js';
+	import { invalidateAll } from '$app/navigation';
+	import { fmtKm, fmtPace, type Run } from '#lib/api.js';
+	import ladderConfig from '#lib/interval-ladder.json';
 	import {
 		RUNS_PER_WEEK,
 		SESSION_LABEL,
 		addDays,
+		ladderProgress,
 		mondayOf,
 		plannedOn,
+		stepOn,
 		today,
+		type LadderConfig,
 		type Session
 	} from '#lib/training.js';
 	import type { PageProps } from './$types';
@@ -17,6 +22,41 @@
 	const lo = $derived(Math.round(data.hrMax * 0.7));
 	const hi = $derived(Math.round(data.hrMax * 0.85));
 	const easy = $derived(Math.round(data.hrMax * 0.75));
+
+	const todayKey = today();
+	const ladder = $derived(
+		ladderProgress(data.runs, ladderConfig as LadderConfig, data.validations)
+	);
+
+	// Hand validation of the current step, or undo of the last one validated by hand.
+	let saving = $state(false);
+	let saveError = $state('');
+	async function setValidated(stepKey: string, on: boolean, runId?: number, day?: string) {
+		saving = true;
+		saveError = '';
+		try {
+			const res = on
+				? await fetch('/api/ladder/validations', {
+						method: 'POST',
+						headers: { 'content-type': 'application/json' },
+						body: JSON.stringify({ step_key: stepKey, day, run_id: runId })
+					})
+				: await fetch(`/api/ladder/validations?step_key=${encodeURIComponent(stepKey)}`, {
+						method: 'DELETE'
+					});
+			if (!res.ok) throw new Error(String(res.status));
+			await invalidateAll();
+		} catch {
+			saveError = 'Enregistrement impossible, réessaie.';
+		} finally {
+			saving = false;
+		}
+	}
+	const next = $derived(
+		ladder.steps[Math.min(ladder.current, ladder.steps.length - 1)] as
+			(typeof ladder.steps)[number] | undefined
+	);
+	const recovery = ladderConfig.recovery.replace(':', ' min ');
 
 	const plan = $derived([
 		{
@@ -32,8 +72,10 @@
 			day: 'Jeudi',
 			session: 'intervals' as Session,
 			points: [
-				'15 min d’échauffement, puis 8 × 400 m ou 5 × 1 000 m.',
-				'Récupération de 1 min 30 en trottinant entre les répétitions.',
+				next
+					? `15 min d’échauffement, puis ${next.label} à ${fmtPace(next.pace_s)} /km.`
+					: '15 min d’échauffement, puis les répétitions.',
+				`Récupération de ${recovery} en trottinant entre les répétitions.`,
 				'10 min de retour au calme.'
 			]
 		},
@@ -48,7 +90,6 @@
 		}
 	]);
 
-	const todayKey = today();
 	const byDay = $derived.by(() => {
 		const m = new Map<string, Run[]>();
 		for (const r of data.runs) {
@@ -66,7 +107,12 @@
 			const monday = addDays(first, 7 * w);
 			const days = Array.from({ length: 7 }, (_, i) => {
 				const day = addDays(monday, i);
-				return { day, planned: plannedOn(day), runs: byDay.get(day) ?? [] };
+				return {
+					day,
+					planned: plannedOn(day),
+					step: stepOn(day, todayKey, ladder),
+					runs: byDay.get(day) ?? []
+				};
 			});
 			return { monday, days, done: days.reduce((n, d) => n + d.runs.length, 0) };
 		});
@@ -116,6 +162,70 @@
 				</div>
 			{/each}
 		</div>
+	</section>
+
+	<section class="mt-12" aria-labelledby="ladder">
+		<h2 id="ladder" class="text-lg font-semibold">Paliers de fractionné</h2>
+		<p class="mt-1 max-w-2xl text-sm text-muted">
+			Le bouton Valider apparaît quand une séance de fractionné, quel que soit le jour, compte les
+			bonnes répétitions et que leur allure moyenne tient la cible (à {ladderConfig.tolerance_s} s/km
+			près). Rien n’est validé sans clic.
+		</p>
+		<ol class="mt-4 grid gap-2 sm:grid-cols-3">
+			{#each ladder.steps as st, i (i)}
+				{@const v = ladder.validated[i]}
+				<li
+					class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 rounded-lg p-3 text-sm {i ===
+					ladder.current
+						? 'bg-surface ring-1 ring-route'
+						: 'bg-surface'}"
+				>
+					<span class="whitespace-nowrap">
+						<span class="font-semibold">{st.label}</span>
+						<span class="text-muted">à {fmtPace(st.pace_s)}</span>
+					</span>
+					{#if v}
+						<span class="flex shrink-0 items-baseline gap-2 text-xs whitespace-nowrap">
+							<a href="/runs/{v.runId}" class="text-route hover:underline"
+								>Validé · {weekLabel(v.day)}{v.pace_s ? ` · ${fmtPace(v.pace_s)}` : ''}</a
+							>
+							{#if i === ladder.current - 1}
+								<button
+									class="text-muted underline hover:text-ink disabled:opacity-40"
+									disabled={saving}
+									onclick={() => setValidated(st.key, false)}>Annuler</button
+								>
+							{/if}
+						</span>
+					{:else if i === ladder.current && ladder.candidate}
+						{@const c = ladder.candidate}
+						<span class="flex shrink-0 items-baseline gap-2 text-xs whitespace-nowrap">
+							<a href="/runs/{c.runId}" class="text-muted hover:underline"
+								>{weekLabel(c.day)} · {fmtPace(c.pace_s)}</a
+							>
+							<button
+								class="h-7 rounded-full border border-route px-3 font-medium text-route transition-colors hover:bg-route/15 disabled:opacity-40"
+								disabled={saving}
+								onclick={() => setValidated(st.key, true, c.runId, c.day)}>Valider</button
+							>
+						</span>
+					{:else if i === ladder.current}
+						<span class="text-xs font-medium text-route">En cours</span>
+					{:else}
+						<span class="text-xs text-faint">À venir</span>
+					{/if}
+				</li>
+			{/each}
+		</ol>
+		{#if saveError}
+			<p class="mt-3 text-sm text-[#b42318] dark:text-[#f97066]" role="alert">{saveError}</p>
+		{/if}
+		{#if ladder.current >= ladder.steps.length}
+			<p class="mt-3 text-sm text-muted">
+				Tous les paliers sont validés : ajoute les suivants dans
+				<code>frontend/src/lib/interval-ladder.json</code>.
+			</p>
+		{/if}
 	</section>
 
 	<section class="mt-12" aria-labelledby="calendar">
@@ -207,7 +317,7 @@
 									? 'border border-dashed ' + (missed ? 'border-rule' : 'border-route/60')
 									: ''} {d.day === todayKey ? 'ring-1 ring-ink' : ''}"
 								title={d.planned
-									? `${SESSION_LABEL[d.planned]}${missed ? ' – non faite' : ''}`
+									? `${SESSION_LABEL[d.planned]}${d.step ? ` – ${d.step.label} à ${fmtPace(d.step.pace_s)}` : ''}${missed ? ' – non faite' : ''}`
 									: undefined}
 							>
 								<span class="text-[11px] {future ? 'text-faint' : 'text-muted'}"
@@ -221,6 +331,11 @@
 									>
 										{shortLabel[d.planned]}
 									</span>
+									{#if d.step}
+										<span class="truncate text-[10px] text-muted sm:text-xs"
+											>{d.step.distance_m}·{fmtPace(d.step.pace_s)}</span
+										>
+									{/if}
 								{/if}
 							</div>
 						{/if}

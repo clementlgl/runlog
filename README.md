@@ -66,6 +66,10 @@ MIFIT_SESSION_DIR=/opt/runlog/mifit-session
 RUNLOG_DATA_DIR=/opt/runlog/data
 ```
 
+### Paliers de fractionné
+
+`frontend/src/lib/interval-ladder.json` définit la progression du fractionné : chaque bloc (`reps`, `distance_m`) se décline en paliers, un par allure de `paces` (`m:ss` au km), dans l'ordre du fichier. Une séance remplit la condition d'un palier si elle est détectée avec les mêmes répétitions (ex. `8 × 400 m`) et une allure moyenne des reps au plus égale à la cible + `tolerance_s`. Toutes les séances de fractionné comptent, quel que soit le jour, chacune pour un seul palier. Rien n’est validé automatiquement : le bouton **Valider** du palier en cours n’apparaît que si une séance remplit la condition, et c’est elle qui valide le palier (enregistré en base, annulable). Le fichier est lu au build : relancer `docker compose up -d --build` après modification.
+
 ## Session Xiaomi
 
 Connexion depuis l'app : panneau **Synchroniser**, bouton **Se connecter à Xiaomi**. La page de connexion Xiaomi s'ouvre dans un nouvel onglet : s'y connecter à son compte et valider ; la session est enregistrée avec la région `MIFIT_REGION`.

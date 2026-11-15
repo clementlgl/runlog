@@ -2,6 +2,7 @@ export type Run = {
 	id: number;
 	workout_type: 'intervals' | 'continuous' | null;
 	workout_label: string | null;
+	rep_pace_s_per_km: number | null; // mean rep pace, interval sessions only
 	start_local: string;
 	sport: string | null;
 	duration_s: number;

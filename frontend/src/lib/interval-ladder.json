@@ -1,0 +1,8 @@
+{
+	"tolerance_s": 3,
+	"recovery": "1:30",
+	"steps": [
+		{ "reps": 8, "distance_m": 400, "paces": ["4:45", "4:30", "4:15"] },
+		{ "reps": 8, "distance_m": 500, "paces": ["4:45", "4:30", "4:15"] }
+	]
+}
