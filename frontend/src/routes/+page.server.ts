@@ -1,12 +1,12 @@
-import type { Routes, Run, WeekStat } from '#lib/api.js';
+import type { Routes, Run, Trophy } from '#lib/api.js';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ fetch }) => {
 	const get = <T>(path: string) => fetch(path).then((r) => r.json() as Promise<T>);
-	const [runs, weekly, routes] = await Promise.all([
+	const [runs, routes, trophies] = await Promise.all([
 		get<Run[]>('/api/runs?sport=running'),
-		get<WeekStat[]>('/api/stats/weekly'),
-		get<Routes>('/api/routes?points=120')
+		get<Routes>('/api/routes?points=120'),
+		get<Trophy[]>('/api/trophies')
 	]);
-	return { runs, weekly, routes };
+	return { runs, routes, trophies };
 };

@@ -207,9 +207,7 @@
 <svelte:head><title>{fmtDay(run.start_local)} – Runlog</title></svelte:head>
 
 <main class="mx-auto max-w-5xl px-4 pt-8 pb-20 sm:px-8 sm:pt-12">
-	<a href="/" class="text-sm text-muted hover:text-ink hover:underline">Toutes les sorties</a>
-
-	<header class="mt-4">
+	<header>
 		<h1 class="text-2xl font-semibold tracking-tight">{fmtDay(run.start_local)}</h1>
 		<p class="mt-1 text-muted">
 			{#if intervals}<span class="font-medium text-ink">Fractionné, {intervals.label}.</span>{/if}

@@ -6,6 +6,7 @@ import {
 	expandLadder,
 	ladderProgress,
 	mondayOf,
+	nextPlanned,
 	parsePace,
 	plannedOn,
 	stepOn
@@ -17,6 +18,12 @@ test('weekly plan', () => {
 	assert.equal(plannedOn('2026-11-07'), 'test'); // first Saturday of November
 	assert.equal(plannedOn('2026-11-14'), 'steady'); // second Saturday
 	assert.equal(plannedOn('2026-11-10'), null); // Tuesday
+});
+
+test('next planned session', () => {
+	assert.deepEqual(nextPlanned('2026-11-16', false), { day: '2026-11-16', session: 'long' });
+	assert.deepEqual(nextPlanned('2026-11-16', true), { day: '2026-11-19', session: 'intervals' });
+	assert.deepEqual(nextPlanned('2026-11-29', false), { day: '2026-11-30', session: 'long' }); // Sunday
 });
 
 test('week arithmetic', () => {

@@ -1,81 +1,72 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { fmtDay, fmtDuration, fmtKm, fmtPace, fmtShortDay, fmtTime } from '#lib/api.js';
+	import Medal from '#lib/components/Medal.svelte';
 	import RouteGlyph from '#lib/components/RouteGlyph.svelte';
 	import SyncPanel from '#lib/components/SyncPanel.svelte';
-	import Vo2Chart from '#lib/components/Vo2Chart.svelte';
+	import { SESSION_LABEL, addDays, nextPlanned, today } from '#lib/training.js';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
+	const todayKey = today();
 	const latest = $derived(data.runs[0]);
-	const totalM = $derived(data.runs.reduce((a, r) => a + r.distance_m, 0));
-	const since = $derived(
-		data.runs.length
-			? new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(
-					new Date(data.runs[data.runs.length - 1].start_local)
-				)
-			: ''
-	);
-
-	// Weekly volume with empty weeks filled in, so gaps read as gaps.
-	const weeks = $derived.by(() => {
-		if (!data.weekly.length) return [];
-		const byWeek = new Map(data.weekly.map((w) => [w.week, w]));
-		const out: { week: string; km: number; runs: number }[] = [];
-		const d = new Date(data.weekly[0].week + 'T00:00:00Z');
-		const end = new Date(data.weekly[data.weekly.length - 1].week + 'T00:00:00Z');
-		for (; d <= end; d.setUTCDate(d.getUTCDate() + 7)) {
-			const key = d.toISOString().slice(0, 10);
-			const w = byWeek.get(key);
-			out.push({ week: key, km: w?.distance_km ?? 0, runs: w?.runs ?? 0 });
-		}
-		return out;
-	});
-	const maxKm = $derived(Math.max(1, ...weeks.map((w) => w.km)));
-	const weekLabel = (iso: string) =>
-		new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' })
-			.format(new Date(iso + 'T00:00:00Z'))
-			.replace('.', '');
-
 	let syncOpen = $state(false);
-	let vo2HelpOpen = $state(false);
-	// Highest HR recorded while running: the HRmax the VO2max estimate uses.
-	const hrMax = $derived(Math.max(0, ...data.runs.map((r) => r.max_hr_bpm ?? 0)));
+
+	// Next session of the weekly plan.
+	const next = $derived(
+		nextPlanned(
+			todayKey,
+			data.runs.some((r) => r.start_local.startsWith(todayKey))
+		)
+	);
+	const when = (day: string) =>
+		day === todayKey
+			? 'Aujourd’hui'
+			: day === addDays(todayKey, 1)
+				? 'Demain'
+				: fmtShortDay(day + 'T00:00:00');
+
+	// Fitness: latest watch VO2max against about a month earlier, latest estimate.
+	const watch = $derived(data.runs.find((r) => r.vo2_max_watch != null));
+	const watchBefore = $derived.by(() => {
+		if (!watch) return undefined;
+		const cutoff = addDays(watch.start_local.slice(0, 10), -30);
+		return data.runs.find((r) => r.vo2_max_watch != null && r.start_local.slice(0, 10) <= cutoff);
+	});
+	const watchDelta = $derived(
+		watch && watchBefore ? watch.vo2_max_watch! - watchBefore.vo2_max_watch! : null
+	);
+	const est = $derived(data.runs.find((r) => r.vo2max_est != null));
+	const nf1 = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 });
+
+	// Trophies: the latest unlocked.
+	const recent = $derived(
+		data.trophies
+			.filter((t) => t.unlocked && t.unlocked_at)
+			.sort((a, b) => b.unlocked_at!.localeCompare(a.unlocked_at!))
+			.slice(0, 3)
+	);
+	const shortDate = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short' });
+	const fmtShort = (iso: string) => shortDate.format(new Date(iso)).replace('.', '');
 </script>
 
 <svelte:head><title>Runlog</title></svelte:head>
 
-<main class="mx-auto max-w-5xl px-4 pt-10 pb-20 sm:px-8 sm:pt-14">
+<main class="mx-auto max-w-5xl px-4 pt-8 pb-20 sm:px-8 sm:pt-12">
 	<header class="flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
 		<div>
-			<h1 class="text-2xl font-semibold tracking-tight">Mes courses</h1>
-			<p class="mt-1 text-muted">
-				{data.runs.length} sorties et {fmtKm(totalM, 1)} km depuis le {since}
-			</p>
+			<h1 class="text-2xl font-semibold tracking-tight">{fmtDay(todayKey + 'T00:00:00')}</h1>
+			<p class="mt-1 text-muted">Tes dernières nouvelles de course.</p>
 		</div>
-		<div class="flex flex-wrap gap-2">
-			<a
-				href="/entrainement"
-				class="rounded-full border border-rule bg-surface px-4 py-2 text-sm font-medium transition-colors hover:border-ink"
-			>
-				Entraînement
-			</a>
-			<a
-				href="/trophees"
-				class="rounded-full border border-rule bg-surface px-4 py-2 text-sm font-medium transition-colors hover:border-ink"
-			>
-				Trophées
-			</a>
-			<button
-				class="rounded-full border border-rule bg-surface px-4 py-2 text-sm font-medium transition-colors hover:border-ink"
-				aria-expanded={syncOpen}
-				aria-controls="sync-panel"
-				onclick={() => (syncOpen = !syncOpen)}
-			>
-				{syncOpen ? 'Fermer' : 'Synchroniser'}
-			</button>
-		</div>
+		<button
+			class="rounded-full border border-rule bg-surface px-4 py-2 text-sm font-medium transition-colors hover:border-ink"
+			aria-expanded={syncOpen}
+			aria-controls="sync-panel"
+			onclick={() => (syncOpen = !syncOpen)}
+		>
+			{syncOpen ? 'Fermer' : 'Synchroniser'}
+		</button>
 	</header>
 
 	{#if syncOpen}
@@ -87,7 +78,7 @@
 	{#if latest}
 		<a
 			href="/runs/{latest.id}"
-			class="group mt-10 grid items-center gap-6 rounded-2xl bg-surface p-6 sm:grid-cols-[minmax(0,15rem)_1fr] sm:gap-10 sm:p-8"
+			class="group mt-8 grid items-center gap-6 rounded-2xl bg-surface p-6 sm:grid-cols-[minmax(0,15rem)_1fr] sm:gap-10 sm:p-8"
 		>
 			<RouteGlyph
 				points={data.routes[latest.id]}
@@ -114,9 +105,15 @@
 						<dd class="mt-1 figure text-figure">{fmtDuration(latest.duration_s)}</dd>
 					</div>
 					<div>
-						<dt class="text-sm text-muted">Allure</dt>
+						<dt class="text-sm text-muted">
+							{latest.workout_type === 'intervals' ? 'Allure des reps' : 'Allure'}
+						</dt>
 						<dd class="mt-1 figure text-figure">
-							{fmtPace(latest.pace_s_per_km)}<span class="ml-1 text-lg text-muted">/km</span>
+							{fmtPace(
+								latest.workout_type === 'intervals'
+									? latest.rep_pace_s_per_km
+									: latest.pace_s_per_km
+							)}<span class="ml-1 text-lg text-muted">/km</span>
 						</dd>
 					</div>
 					<div>
@@ -128,118 +125,70 @@
 				</dl>
 			</div>
 		</a>
+	{:else}
+		<p class="mt-8 rounded-2xl bg-surface p-6 text-muted">
+			Aucune sortie pour l’instant. Synchronise ta montre pour récupérer tes courses.
+		</p>
 	{/if}
 
-	<section class="mt-14" aria-labelledby="weeks">
-		<h2 id="weeks" class="text-lg font-semibold">Kilomètres par semaine</h2>
-		<div class="mt-6 flex h-44 items-end gap-1.5 sm:gap-3">
-			{#each weeks as w, i (w.week)}
-				{@const last = i === weeks.length - 1}
-				<div
-					class="group flex h-full flex-1 flex-col items-center justify-end gap-1.5"
-					title="Semaine du {weekLabel(w.week)} : {fmtKm(
-						w.km * 1000,
-						1
-					)} km en {w.runs} sortie{w.runs > 1 ? 's' : ''}"
-				>
-					<span class="text-xs {last ? 'font-semibold text-ink' : 'text-muted'}">
-						{w.km ? Math.round(w.km) : ''}
-					</span>
-					<div
-						class="w-full max-w-12 rounded-t-[4px] {last
-							? 'bg-route'
-							: 'bg-route/35 group-hover:bg-route/60'}"
-						style="height: {(w.km / maxKm) * 100}%; min-height: {w.km ? 2 : 0}px"
-					></div>
+	<div class="mt-4 grid gap-4 md:grid-cols-3">
+		<a
+			href="/entrainement"
+			class="group flex flex-col rounded-2xl bg-surface p-6 transition-colors hover:bg-route/10"
+		>
+			<p class="text-sm text-muted">Prochaine séance</p>
+			<h2 class="mt-1 text-lg font-semibold group-hover:underline">
+				{SESSION_LABEL[next.session]}
+			</h2>
+			<p class="mt-3 figure text-2xl text-route">{when(next.day)}</p>
+		</a>
+
+		<a
+			href="/sorties#vo2"
+			class="group flex flex-col rounded-2xl bg-surface p-6 transition-colors hover:bg-route/10"
+		>
+			<p class="text-sm text-muted">Forme</p>
+			<h2 class="mt-1 text-lg font-semibold group-hover:underline">VO2max</h2>
+			<dl class="mt-3 grid grid-cols-2 gap-4">
+				<div>
+					<dt class="text-xs text-muted">Montre</dt>
+					<dd class="mt-1 figure text-2xl">
+						{watch?.vo2_max_watch ?? '–'}
+						{#if watchDelta}
+							<span class="ml-1 text-sm {watchDelta > 0 ? 'text-route' : 'text-muted'}"
+								>{watchDelta > 0 ? '+' : ''}{watchDelta}</span
+							>
+						{/if}
+					</dd>
 				</div>
-			{/each}
-		</div>
-		<div class="mt-2 flex gap-1.5 border-t border-rule pt-2 sm:gap-3">
-			{#each weeks as w, i (w.week)}
-				<span class="flex-1 text-center text-[11px] text-faint">
-					{i % 2 === 0 || i === weeks.length - 1 ? weekLabel(w.week) : ''}
-				</span>
-			{/each}
-		</div>
-	</section>
+				<div>
+					<dt class="text-xs text-muted">Estimée</dt>
+					<dd class="mt-1 figure text-2xl">{est ? nf1.format(est.vo2max_est!) : '–'}</dd>
+				</div>
+			</dl>
+			<p class="mt-auto pt-4 text-xs text-faint">
+				ml/kg/min{#if watchDelta != null}, écart montre sur un mois{/if}{#if est}, estimée le
+					{fmtShort(est.start_local)}{/if}
+			</p>
+		</a>
 
-	<section class="mt-14" aria-labelledby="vo2">
-		<h2 id="vo2" class="flex items-center gap-2 text-lg font-semibold">
-			VO2max
-			<button
-				class="grid size-5 place-items-center rounded-full border border-rule text-xs font-semibold text-muted transition-colors hover:border-ink hover:text-ink"
-				aria-label="Comment la VO2max est calculée"
-				aria-expanded={vo2HelpOpen}
-				aria-controls="vo2-help"
-				onclick={() => (vo2HelpOpen = !vo2HelpOpen)}
-			>
-				?
-			</button>
-		</h2>
-		<p class="mt-1 text-sm text-muted">ml/kg/min, par sortie</p>
-		{#if vo2HelpOpen}
-			<div id="vo2-help" class="mt-4 space-y-3 rounded-xl bg-surface p-5 text-sm text-muted">
-				<p>
-					<span class="font-medium text-ink">Montre :</span> valeur calculée par la montre après chaque
-					sortie. L'algorithme de Xiaomi n'est pas publié (probablement Firstbeat) : il analyse les passages
-					réguliers de la sortie, tient compte de ton profil et lisse la valeur dans le temps, d'où une
-					courbe stable.
-				</p>
-				<p>
-					<span class="font-medium text-ink">Estimée :</span> calculée par Runlog sur chaque sortie
-					continue. La consommation d'oxygène à l'allure moyenne vient de l'équation de course de
-					l'ACSM (3,5 + 0,2 × vitesse en m/min). Elle est divisée par la part de la VO2max utilisée,
-					déduite de la FC moyenne rapportée à ta FC max enregistrée ({hrMax} bpm).
-				</p>
-				<p>
-					Fractionnés et sorties de moins de 15 min ou 2 km ne sont pas estimés. Les côtes, la
-					chaleur et la dérive cardiaque sur les sorties longues font baisser l'estimation ; une FC
-					max réelle au-dessus de {hrMax} la ferait remonter.
-				</p>
-			</div>
-		{/if}
-		<div class="mt-4"><Vo2Chart runs={data.runs} /></div>
-	</section>
-
-	<section class="mt-14" aria-labelledby="all">
-		<h2 id="all" class="text-lg font-semibold">Toutes les sorties</h2>
-		<ol class="mt-4">
-			{#each data.runs as r (r.id)}
-				<li class="border-t border-rule first:border-t-0">
-					<a
-						href="/runs/{r.id}"
-						class="grid grid-cols-[2.5rem_1fr_auto] items-center gap-x-4 rounded-lg px-2 py-3 hover:bg-surface sm:grid-cols-[2.5rem_1fr_6rem_5rem_6rem_4rem]"
-					>
-						<RouteGlyph points={data.routes[r.id]} size={40} stroke={1.25} class="text-route" />
-						<span>
-							<span class="font-medium">{fmtShortDay(r.start_local)}</span>
-							<span class="ml-2 text-sm text-faint">{fmtTime(r.start_local)}</span>
-							{#if r.workout_type === 'intervals'}
-								<span
-									class="ml-2 rounded-full bg-route-soft px-2 py-0.5 text-xs font-medium whitespace-nowrap text-ink"
-								>
-									Fractionné {r.workout_label}
-								</span>
-							{/if}
-						</span>
-						<span class="text-right">
-							<span class="figure text-lg">{fmtKm(r.distance_m)}</span>
-							<span class="text-sm text-muted">km</span>
-						</span>
-						<span class="hidden text-right text-muted sm:block">{fmtDuration(r.duration_s)}</span>
-						<span class="hidden text-right sm:block"
-							>{fmtPace(r.pace_s_per_km)}<span class="ml-0.5 text-sm text-muted">/km</span></span
-						>
-						<span class="hidden text-right text-muted sm:block"
-							>{r.avg_hr_bpm ?? '–'}<span class="ml-1 text-xs">bpm</span></span
-						>
-					</a>
-				</li>
-			{:else}
-				<li class="py-10 text-muted">
-					Aucune sortie pour l'instant. Synchronise ta montre pour récupérer tes courses.
-				</li>
-			{/each}
-		</ol>
-	</section>
+		<a
+			href="/trophees"
+			class="group flex flex-col rounded-2xl bg-surface p-6 transition-colors hover:bg-route/10"
+		>
+			<p class="text-sm text-muted">Trophées</p>
+			<h2 class="mt-1 text-lg font-semibold group-hover:underline">Derniers débloqués</h2>
+			<ul class="mt-3 space-y-2">
+				{#each recent as t (t.id)}
+					<li class="flex items-center gap-2 text-sm">
+						<Medal tier={t.tier} unlocked class="h-6 w-5 shrink-0" />
+						<span class="min-w-0 flex-1 truncate">{t.title}</span>
+						<span class="text-xs text-faint">{fmtShort(t.unlocked_at!)}</span>
+					</li>
+				{:else}
+					<li class="text-sm text-muted">Aucun pour l’instant.</li>
+				{/each}
+			</ul>
+		</a>
+	</div>
 </main>

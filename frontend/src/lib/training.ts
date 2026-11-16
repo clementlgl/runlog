@@ -168,3 +168,15 @@ export function stepOn(day: string, todayKey: string, p: LadderProgress): Ladder
 		if (plannedOn(d) === 'intervals' && !done.has(d)) ahead++;
 	return p.steps[Math.min(p.current + ahead, p.steps.length - 1)];
 }
+
+/** Next planned session from ``todayKey`` on: today's, unless already run (``ranToday``). */
+export function nextPlanned(
+	todayKey: string,
+	ranToday: boolean
+): { day: string; session: Session } {
+	for (let i = ranToday ? 1 : 0; ; i++) {
+		const day = addDays(todayKey, i);
+		const session = plannedOn(day);
+		if (session) return { day, session };
+	}
+}
