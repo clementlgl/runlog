@@ -21,7 +21,9 @@ def test_manual_validations(main):
     assert main.ladder_validations() == []
     main.validate_ladder_step(main.LadderValidation(step_key="8 × 400 m@285", day=date(2026, 11, 19), run_id=1))
     main.validate_ladder_step(main.LadderValidation(step_key="8 × 400 m@270", day=date(2026, 11, 26), run_id=2))
-    main.validate_ladder_step(main.LadderValidation(step_key="8 × 400 m@285", day=date(2026, 11, 20), run_id=3))  # re-dated
+    main.validate_ladder_step(
+        main.LadderValidation(step_key="8 × 400 m@285", day=date(2026, 11, 20), run_id=3)
+    )  # re-dated
     assert main.ladder_validations() == [
         {"step_key": "8 × 400 m@285", "day": "2026-11-20", "run_id": 3},
         {"step_key": "8 × 400 m@270", "day": "2026-11-26", "run_id": 2},
